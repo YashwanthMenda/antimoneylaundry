@@ -17,6 +17,8 @@ interface CaseItem {
   daysOpen: number;
   officer: string;
   dbId: string;
+  assignedTo?: string | null;
+  assignedAnalystName?: string | null;
 }
 
 interface TopRiskAccount {
@@ -103,7 +105,7 @@ export default function CasePipelineSidebar() {
                   <StatusBadge status={c.status} />
                   <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                     <Clock size={9} />
-                    <span className="font-mono">{c.daysOpen}d · {c.officer}</span>
+                    <span className="font-mono">{c.daysOpen}d · {c.assignedAnalystName ?? c.officer}</span>
                   </div>
                 </div>
               </div>

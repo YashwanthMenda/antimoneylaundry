@@ -182,6 +182,8 @@ export async function getCases() {
       accountId: c.account_id,
       jurisdiction: c.jurisdiction,
       dbId: c.id,
+      assignedTo: c.assigned_to ?? null,
+      assignedAnalystName: c.assigned_analyst_name ?? null,
     }));
   } catch (e: any) {
     console.error('getCases:', e.message);
