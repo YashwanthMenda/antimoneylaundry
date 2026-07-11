@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
 import {
   LayoutDashboard, AlertTriangle, FolderOpen, FileText,
-  Network, Users, Settings, ChevronLeft, ChevronRight, Bell, Shield, FilePlus, ClipboardList,
+  Network, Users, Settings, ChevronLeft, ChevronRight, Bell, Shield, FilePlus, ClipboardList, ClipboardCheck,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -30,6 +30,7 @@ const navItems: NavItem[] = [
   { id: 'nav-pending-cases', label: 'Review Queue', href: '/pending-cases', icon: ClipboardList, badgeKey: 'pending', group: 'INVESTIGATION' },
   { id: 'nav-network', label: 'Network Graph', href: '/network', icon: Network, group: 'INVESTIGATION' },
   { id: 'nav-sar', label: 'SAR Reports', href: '/sar-reports', icon: FileText, badgeKey: 'sar', group: 'COMPLIANCE' },
+  { id: 'nav-audit', label: 'Audit Trail', href: '/audit-trail', icon: ClipboardCheck, group: 'COMPLIANCE' },
   { id: 'nav-entities', label: 'Entities', href: '/entities', icon: Users, group: 'COMPLIANCE' },
   { id: 'nav-settings', label: 'Settings', href: '/settings', icon: Settings, group: 'SYSTEM' },
 ];
