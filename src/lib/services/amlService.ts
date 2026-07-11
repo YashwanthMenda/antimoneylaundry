@@ -532,3 +532,82 @@ export async function getCaseAssignment(caseRef: string) {
     return null;
   }
 }
+
+// ─── PENDING CASE REPORTS (Officer Review) ────────────────────────────────────
+
+export async function getPendingCaseReports() {
+  const supabase = createClient();
+  try {
+    const { data, error } = await supabase
+      .from('case_reports')
+      .select('*')
+      .in('report_status', ['Submitted', 'Acknowledged', 'Closed'])
+      .order('created_at', { ascending: false });
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      return [];
+    }
+    return (data || []).map((r) => ({
+      id: r.report_ref,
+      reportRef: r.report_ref,
+      accountId: r.account_id,
+      accountHolder: r.account_holder,
+      accountType: r.account_type,
+      bankName: r.bank_name,
+      activityType: r.activity_type,
+      activityDescription: r.activity_description,
+      transactionAmount: r.transaction_amount,
+      transactionDate: r.transaction_date ?? null,
+      riskLevel: r.risk_level,
+      jurisdiction: r.jurisdiction,
+      evidenceNotes: r.evidence_notes ?? null,
+      reportStatus: r.report_status,
+      submittedByName: r.submitted_by_name,
+      createdAt: new Date(r.created_at).toLocaleString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      }),
+      acknowledgedByName: r.acknowledged_by_name ?? null,
+      acknowledgedAt: r.acknowledged_at
+        ? new Date(r.acknowledged_at).toLocaleString('en-IN', {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: false,
+          })
+        : null,
+      dbId: r.id,
+    }));
+  } catch (e: any) {
+    console.error('getPendingCaseReports:', e.message);
+    return [];
+  }
+}
+
+export async function acknowledgeCaseReport(
+  dbId: string,
+  officerId: string,
+  officerName: string,
+  newStatus: 'Acknowledged' | 'Closed'
+) {
+  const supabase = createClient();
+  try {
+    const update: any = {
+      report_status: newStatus,
+      acknowledged_by: officerId || null,
+      acknowledged_by_name: officerName,
+      acknowledged_at: new Date().toISOString(),
+    };
+    const { error } = await supabase
+      .from('case_reports')
+      .update(update)
+      .eq('id', dbId);
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      console.error('acknowledgeCaseReport error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (e: any) {
+    console.error('acknowledgeCaseReport:', e.message);
+    return false;
+  }
+}

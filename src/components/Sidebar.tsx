@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
 import {
   LayoutDashboard, AlertTriangle, FolderOpen, FileText,
-  Network, Users, Settings, ChevronLeft, ChevronRight, Bell, Shield, FilePlus,
+  Network, Users, Settings, ChevronLeft, ChevronRight, Bell, Shield, FilePlus, ClipboardList,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -27,6 +27,7 @@ const navItems: NavItem[] = [
   { id: 'nav-alerts', label: 'Alerts', href: '/alerts', icon: AlertTriangle, badgeKey: 'alerts', group: 'MONITORING' },
   { id: 'nav-cases', label: 'Case Management', href: '/case-investigation-detail', icon: FolderOpen, badgeKey: 'cases', group: 'INVESTIGATION' },
   { id: 'nav-file-case', label: 'File a Case', href: '/file-a-case', icon: FilePlus, group: 'INVESTIGATION' },
+  { id: 'nav-pending-cases', label: 'Pending Cases', href: '/pending-cases', icon: ClipboardList, badgeKey: 'pending', group: 'INVESTIGATION' },
   { id: 'nav-network', label: 'Network Graph', href: '/network', icon: Network, group: 'INVESTIGATION' },
   { id: 'nav-sar', label: 'SAR Reports', href: '/sar-reports', icon: FileText, badgeKey: 'sar', group: 'COMPLIANCE' },
   { id: 'nav-entities', label: 'Entities', href: '/entities', icon: Users, group: 'COMPLIANCE' },
@@ -44,9 +45,10 @@ export default function Sidebar() {
   const userRole = (user as any)?.user_metadata?.role ?? (user as any)?.role ?? '';
   const isAnalyst = userRole === 'aml_analyst' || userRole === 'analyst' || (!userRole);
 
-  // Filter nav items: hide 'File a Case' for senior_officer and admin
+  // Filter nav items: hide 'File a Case' for senior_officer and admin; hide 'Pending Cases' for analysts
   const visibleNavItems = navItems.filter((item) => {
     if (item.id === 'nav-file-case') return isAnalyst;
+    if (item.id === 'nav-pending-cases') return !isAnalyst;
     return true;
   });
 
@@ -54,15 +56,17 @@ export default function Sidebar() {
     const supabase = createClient();
 
     async function loadBadges() {
-      const [alertsRes, casesRes, sarRes] = await Promise.all([
+      const [alertsRes, casesRes, sarRes, pendingRes] = await Promise.all([
         supabase.from('alerts').select('*', { count: 'exact', head: true }).in('alert_status', ['New', 'Escalated']),
         supabase.from('cases').select('*', { count: 'exact', head: true }).in('case_status', ['Open', 'Investigating']),
         supabase.from('sar_reports').select('*', { count: 'exact', head: true }).in('sar_status', ['Draft', 'Pending Review']),
+        supabase.from('case_reports').select('*', { count: 'exact', head: true }).eq('report_status', 'Submitted'),
       ]);
       setBadges({
         alerts: alertsRes.count ?? 0,
         cases: casesRes.count ?? 0,
         sar: sarRes.count ?? 0,
+        pending: pendingRes.count ?? 0,
       });
     }
 
@@ -73,6 +77,7 @@ export default function Sidebar() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'alerts' }, loadBadges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cases' }, loadBadges)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sar_reports' }, loadBadges)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'case_reports' }, loadBadges)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
