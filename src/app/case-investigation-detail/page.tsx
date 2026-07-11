@@ -8,7 +8,7 @@ import CaseDetailTabs from './components/CaseDetailTabs';
 
 function CaseInvestigationDetailContent() {
   const searchParams = useSearchParams();
-  const caseRef = searchParams?.get('case') ?? 'CASE-0847';
+  const caseRef = searchParams?.get('case') ?? null;
   const [activeTab, setActiveTab] = useState('overview');
 
   return (

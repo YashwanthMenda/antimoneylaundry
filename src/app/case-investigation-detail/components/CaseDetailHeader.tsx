@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface CaseDetailHeaderProps {
-  caseRef?: string;
+  caseRef?: string | null;
   onViewSAR?: () => void;
 }
 
@@ -20,8 +20,35 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
   const userRole = (user as any)?.user_metadata?.role ?? (user as any)?.role ?? '';
   const isSeniorOfficer = userRole === 'senior_officer' || userRole === 'admin';
 
-  // Dynamic case ref from prop (defaults to CASE-0847 for backward compat)
-  const CASE_REF = caseRefProp ?? 'CASE-0847';
+  // Resolved case ref — starts null until auto-loaded if not provided
+  const [resolvedCaseRef, setResolvedCaseRef] = useState<string | null>(caseRefProp ?? null);
+  const CASE_REF = resolvedCaseRef ?? '';
+
+  // Auto-load first active case when no caseRef is provided
+  useEffect(() => {
+    if (caseRefProp) {
+      setResolvedCaseRef(caseRefProp);
+      return;
+    }
+    async function autoLoadFirstActiveCase() {
+      const cases = await getCases();
+      // Prefer active (non-closed) cases first
+      const active = (cases as any[]).find((c) => c.status && c.status.toLowerCase() !== 'closed');
+      const first = active ?? cases[0];
+      if (first) setResolvedCaseRef(first.id);
+    }
+    autoLoadFirstActiveCase();
+  }, [caseRefProp]);
+
+  // Reset case-specific state when the resolved case ref changes
+  useEffect(() => {
+    if (!resolvedCaseRef) return;
+    setCaseData(null);
+    setSarStatus(null);
+    setGenerated(false);
+    setEscalated(false);
+    setCurrentAssignee(null);
+  }, [resolvedCaseRef]);
 
   // Dynamic case data loaded from DB
   const [caseData, setCaseData] = useState<{
