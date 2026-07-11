@@ -41,6 +41,15 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
 
+  const userRole = (user as any)?.user_metadata?.role ?? (user as any)?.role ?? '';
+  const isAnalyst = userRole === 'aml_analyst' || userRole === 'analyst' || (!userRole);
+
+  // Filter nav items: hide 'File a Case' for senior_officer and admin
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.id === 'nav-file-case') return isAnalyst;
+    return true;
+  });
+
   useEffect(() => {
     const supabase = createClient();
 
@@ -95,7 +104,7 @@ export default function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto scrollbar-thin py-4">
         {groups.map((group) => {
-          const items = navItems.filter((n) => n.group === group);
+          const items = visibleNavItems.filter((n) => n.group === group);
           if (items.length === 0) return null;
           return (
             <div key={`group-${group}`} className="mb-2">
