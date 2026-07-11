@@ -41,6 +41,7 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generated, setGenerated] = useState(false);
+  const [sarSubmitError, setSarSubmitError] = useState<string | null>(null);
   const [escalated, setEscalated] = useState(false);
   const [isEscalating, setIsEscalating] = useState(false);
   const [extensionReason, setExtensionReason] = useState('');
@@ -75,7 +76,7 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
   } | null>(null);
 
   // Derived timeline flags from live SAR data
-  const sarExists = generated || sarStatus !== null;
+  const sarExists = sarStatus !== null || generated;
   const sarApproved = sarStatus?.status === 'Submitted' || sarStatus?.status === 'Acknowledged';
 
   const sarPendingDate = sarStatus?.generatedAt
@@ -158,21 +159,47 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
   const riskScore = caseData?.score ?? 92;
   const riskLevel = getRiskLevel(riskScore);
 
-  const handleUploadSAR = async () => {
-    setIsGenerating(true);
-    await createSARReport({
-      caseRef: CASE_REF,
-      subject: sarUploadForm.subject,
-      accountId: sarUploadForm.accountId,
-      pattern: sarUploadForm.pattern,
-      riskScore: parseInt(sarUploadForm.riskScore, 10) || riskScore,
-      amount: sarUploadForm.amount,
-      officer: (user as any)?.user_metadata?.full_name ?? 'Analyst Sharma',
+  // Helper: open SAR modal with fresh state and safe form defaults
+  const openSarModal = () => {
+    setGenerated(false);
+    setSarSubmitError(null);
+    setUploadedFile(null);
+    setSarUploadForm({
+      subject: caseData?.subject ?? '',
+      accountId: caseData?.accountId ?? '',
+      pattern: caseData?.pattern ?? '',
+      riskScore: caseData?.score != null ? String(caseData.score) : '',
+      amount: '',
+      notes: '',
     });
-    setIsGenerating(false);
-    setGenerated(true);
-    const data = await getSARStatusForCase(CASE_REF);
-    if (data) setSarStatus(data);
+    setSarModalOpen(true);
+  };
+
+  const handleUploadSAR = async () => {
+    setSarSubmitError(null);
+    if (!sarUploadForm.subject.trim() || !sarUploadForm.accountId.trim()) {
+      setSarSubmitError('Subject and Account ID are required before submitting.');
+      return;
+    }
+    setIsGenerating(true);
+    try {
+      await createSARReport({
+        caseRef: CASE_REF,
+        subject: sarUploadForm.subject,
+        accountId: sarUploadForm.accountId,
+        pattern: sarUploadForm.pattern,
+        riskScore: parseInt(sarUploadForm.riskScore, 10) || riskScore,
+        amount: sarUploadForm.amount,
+        officer: (user as any)?.user_metadata?.full_name ?? 'Analyst Sharma',
+      });
+      setGenerated(true);
+      const data = await getSARStatusForCase(CASE_REF);
+      if (data) setSarStatus(data);
+    } catch (err) {
+      setSarSubmitError('Failed to submit SAR. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleConfirmEscalation = async () => {
@@ -284,19 +311,7 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
             </div>
           </div>
           <button
-            onClick={() => {
-              setGenerated(false);
-              setSarUploadForm({
-                subject: caseData?.subject ?? 'Unknown Entity',
-                accountId: caseData?.accountId ?? '—',
-                pattern: caseData?.pattern ?? '—',
-                riskScore: String(caseData?.score ?? 0),
-                amount: '—',
-                notes: '',
-              });
-              setUploadedFile(null);
-              setSarModalOpen(true);
-            }}
+            onClick={openSarModal}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-xs font-bold rounded-md hover:bg-primary/90 active:scale-95 transition-all duration-150 shadow-md shadow-primary/30 shrink-0"
           >
             <Upload size={13} />
@@ -417,7 +432,7 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
                     </div>
                   ) : sarExists ? (
                     <button
-                      onClick={() => { setSarModalOpen(true); }}
+                      onClick={openSarModal}
                       className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-primary/10 border border-primary text-primary text-xs font-semibold rounded-md hover:bg-primary/20 active:scale-95 transition-all duration-150"
                     >
                       <FileText size={13} />
@@ -425,19 +440,7 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
                     </button>
                   ) : (
                     <button
-                      onClick={() => {
-                        setGenerated(false);
-                        setSarUploadForm({
-                          subject: caseData?.subject ?? 'Unknown Entity',
-                          accountId: caseData?.accountId ?? '—',
-                          pattern: caseData?.pattern ?? '—',
-                          riskScore: String(caseData?.score ?? 0),
-                          amount: '—',
-                          notes: '',
-                        });
-                        setUploadedFile(null);
-                        setSarModalOpen(true);
-                      }}
+                      onClick={openSarModal}
                       className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white text-xs font-bold rounded-md hover:bg-primary/90 active:scale-95 transition-all duration-150 shadow-md shadow-primary/30 ring-2 ring-primary/20"
                     >
                       <Upload size={14} />
@@ -613,7 +616,7 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
       {/* ── SAR Upload Modal (Analyst only) ── */}
       <Modal
         open={sarModalOpen}
-        onClose={() => { setSarModalOpen(false); setGenerated(false); }}
+        onClose={() => { setSarModalOpen(false); setGenerated(false); setSarSubmitError(null); }}
         title={`Upload SAR — ${CASE_REF}`}
         size="md"
       >
@@ -626,21 +629,23 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
             {/* Form fields */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Subject / Entity</label>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Subject / Entity <span className="text-risk-critical">*</span></label>
                 <input
                   type="text"
                   value={sarUploadForm.subject}
                   onChange={(e) => setSarUploadForm((f) => ({ ...f, subject: e.target.value }))}
-                  className="w-full bg-muted border border-border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
+                  placeholder="e.g. Ananya Trading Pvt Ltd"
+                  className={`w-full bg-muted border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors ${!sarUploadForm.subject.trim() && sarSubmitError ? 'border-risk-critical' : 'border-border'}`}
                 />
               </div>
               <div>
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Account ID</label>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Account ID <span className="text-risk-critical">*</span></label>
                 <input
                   type="text"
                   value={sarUploadForm.accountId}
                   onChange={(e) => setSarUploadForm((f) => ({ ...f, accountId: e.target.value }))}
-                  className="w-full bg-muted border border-border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
+                  placeholder="e.g. HDFC-4521"
+                  className={`w-full bg-muted border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors ${!sarUploadForm.accountId.trim() && sarSubmitError ? 'border-risk-critical' : 'border-border'}`}
                 />
               </div>
               <div>
@@ -649,6 +654,7 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
                   type="text"
                   value={sarUploadForm.pattern}
                   onChange={(e) => setSarUploadForm((f) => ({ ...f, pattern: e.target.value }))}
+                  placeholder="e.g. Smurfing · Round-Trip"
                   className="w-full bg-muted border border-border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
                 />
               </div>
@@ -660,6 +666,7 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
                   max="100"
                   value={sarUploadForm.riskScore}
                   onChange={(e) => setSarUploadForm((f) => ({ ...f, riskScore: e.target.value }))}
+                  placeholder="0–100"
                   className="w-full bg-muted border border-border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
                 />
               </div>
@@ -669,6 +676,7 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
                   type="text"
                   value={sarUploadForm.amount}
                   onChange={(e) => setSarUploadForm((f) => ({ ...f, amount: e.target.value }))}
+                  placeholder="e.g. ₹1,47,32,000"
                   className="w-full bg-muted border border-border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
                 />
               </div>
@@ -713,10 +721,18 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
               )}
             </div>
 
+            {/* Validation / error feedback */}
+            {sarSubmitError && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-risk-critical/10 border border-risk-critical/30 rounded-md">
+                <AlertTriangle size={13} className="text-risk-critical shrink-0" />
+                <p className="text-xs text-risk-critical">{sarSubmitError}</p>
+              </div>
+            )}
+
             <div className="flex gap-3 pt-1">
               <button
                 onClick={handleUploadSAR}
-                disabled={isGenerating || !sarUploadForm.subject.trim() || !sarUploadForm.accountId.trim()}
+                disabled={isGenerating}
                 className="flex-1 flex items-center justify-center gap-2 bg-primary text-white text-sm font-semibold py-2.5 rounded-md hover:bg-primary/90 active:scale-95 transition-all duration-150 disabled:opacity-60"
               >
                 {isGenerating ? (
@@ -726,7 +742,7 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
                 )}
               </button>
               <button
-                onClick={() => setSarModalOpen(false)}
+                onClick={() => { setSarModalOpen(false); setSarSubmitError(null); }}
                 className="px-4 py-2.5 border border-border text-sm text-muted-foreground rounded-md hover:bg-muted transition-all"
               >
                 Cancel
