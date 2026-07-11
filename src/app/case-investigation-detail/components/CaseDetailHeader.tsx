@@ -6,20 +6,34 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import RiskBadge, { getRiskLevel } from '@/components/ui/RiskBadge';
 import Modal from '@/components/ui/Modal';
 import { ArrowLeft, AlertTriangle, FileText, CheckCircle, Clock, User, Building2, MapPin, Calendar, Loader2, CalendarClock, UserCheck, Upload, Paperclip, X } from 'lucide-react';
-import { createSARReport, getSARStatusForCase, getAnalysts, assignCaseToAnalyst, getCaseAssignment } from '@/lib/services/amlService';
+import { createSARReport, getSARStatusForCase, getAnalysts, assignCaseToAnalyst, getCaseAssignment, getCases } from '@/lib/services/amlService';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface CaseDetailHeaderProps {
+  caseRef?: string;
   onViewSAR?: () => void;
 }
 
-const CASE_REF = 'CASE-0847';
-
-export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
+export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: CaseDetailHeaderProps) {
   const { user } = useAuth();
   const userRole = (user as any)?.user_metadata?.role ?? (user as any)?.role ?? '';
   const isSeniorOfficer = userRole === 'senior_officer' || userRole === 'admin';
+
+  // Dynamic case ref from prop (defaults to CASE-0847 for backward compat)
+  const CASE_REF = caseRefProp ?? 'CASE-0847';
+
+  // Dynamic case data loaded from DB
+  const [caseData, setCaseData] = useState<{
+    subject: string;
+    pattern: string;
+    score: number;
+    status: string;
+    accountId: string;
+    jurisdiction: string;
+    assignedAnalystName: string | null;
+    assignedTo: string | null;
+  } | null>(null);
 
   const [sarModalOpen, setSarModalOpen] = useState(false);
   const [escalateModalOpen, setEscalateModalOpen] = useState(false);
@@ -34,7 +48,7 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
   const [extensionSubmitted, setExtensionSubmitted] = useState(false);
   const [isSubmittingExtension, setIsSubmittingExtension] = useState(false);
 
-  // SAR Upload form state (analyst)
+  // SAR Upload form state (analyst) — pre-filled from live case data
   const [sarUploadForm, setSarUploadForm] = useState({
     subject: 'Ananya Trading Pvt Ltd',
     accountId: 'HDFC-4521',
@@ -87,7 +101,7 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
 
     const supabase = createClient();
     const channel = supabase
-      .channel('case_sar_timeline')
+      .channel(`case_sar_timeline_${CASE_REF}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sar_reports' },
@@ -96,7 +110,7 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [CASE_REF]);
 
   // Load current assignment
   useEffect(() => {
@@ -105,9 +119,43 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
       if (data?.analystName) setCurrentAssignee(data.analystName);
     }
     loadAssignment();
-  }, []);
+  }, [CASE_REF]);
 
-  const riskScore = 92;
+  // Load case data dynamically
+  useEffect(() => {
+    async function loadCase() {
+      const cases = await getCases();
+      const found = cases.find((c: any) => c.id === CASE_REF);
+      if (found) {
+        setCaseData({
+          subject: found.subject ?? 'Unknown Entity',
+          pattern: found.pattern ?? '—',
+          score: found.score ?? 0,
+          status: found.status ?? 'Investigating',
+          accountId: (found as any).accountId ?? '—',
+          jurisdiction: (found as any).jurisdiction ?? '—',
+          assignedAnalystName: found.assignedAnalystName ?? null,
+          assignedTo: found.assignedTo ?? null,
+        });
+      }
+    }
+    loadCase();
+  }, [CASE_REF]);
+
+  // Sync SAR form defaults when case data loads
+  useEffect(() => {
+    if (caseData) {
+      setSarUploadForm((f) => ({
+        ...f,
+        subject: caseData.subject,
+        accountId: caseData.accountId,
+        pattern: caseData.pattern,
+        riskScore: String(caseData.score),
+      }));
+    }
+  }, [caseData]);
+
+  const riskScore = caseData?.score ?? 92;
   const riskLevel = getRiskLevel(riskScore);
 
   const handleUploadSAR = async () => {
@@ -117,7 +165,7 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
       subject: sarUploadForm.subject,
       accountId: sarUploadForm.accountId,
       pattern: sarUploadForm.pattern,
-      riskScore: parseInt(sarUploadForm.riskScore, 10) || 92,
+      riskScore: parseInt(sarUploadForm.riskScore, 10) || riskScore,
       amount: sarUploadForm.amount,
       officer: (user as any)?.user_metadata?.full_name ?? 'Analyst Sharma',
     });
@@ -203,7 +251,7 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
           Dashboard
         </Link>
         <span className="text-muted-foreground text-xs">/</span>
-        <span className="text-xs text-muted-foreground">Case Management</span>
+        <Link href="/case-investigation-detail" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Case Management</Link>
         <span className="text-muted-foreground text-xs">/</span>
         <span className="text-xs text-foreground font-medium">{CASE_REF}</span>
       </div>
@@ -229,15 +277,15 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
               <h1 className="text-xl font-bold text-foreground tracking-tight font-mono">
                 {CASE_REF}
               </h1>
-              <StatusBadge status={escalated ? 'Escalated' : sarApproved ? 'Closed' : 'Investigating'} />
+              <StatusBadge status={escalated ? 'Escalated' : sarApproved ? 'Closed' : (caseData?.status ?? 'Investigating')} />
               <RiskBadge level={riskLevel} score={riskScore} />
               <span className="text-[10px] font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded">
-                Smurfing · Round-Trip
+                {caseData?.pattern ?? 'Smurfing · Round-Trip'}
               </span>
             </div>
 
             <h2 className="text-base font-semibold text-foreground mb-1">
-              Ananya Trading Pvt Ltd
+              {caseData?.subject ?? 'Ananya Trading Pvt Ltd'}
             </h2>
             <p className="text-xs text-muted-foreground mb-4">
               Suspected structuring and round-trip layering across 6 jurisdictions via 47 sub-threshold deposits
@@ -246,15 +294,15 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
             {/* Metadata row */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { id: 'meta-account', icon: Building2, label: 'Primary Account', value: 'HDFC-4521', mono: true },
+                { id: 'meta-account', icon: Building2, label: 'Primary Account', value: caseData?.accountId ?? 'HDFC-4521', mono: true },
                 {
                   id: 'meta-officer',
                   icon: User,
                   label: 'Assigned Analyst',
-                  value: currentAssignee ?? (escalated ? 'Senior Director' : 'Priya Mehta'),
+                  value: currentAssignee ?? caseData?.assignedAnalystName ?? (escalated ? 'Senior Director' : 'Priya Mehta'),
                   mono: false,
                 },
-                { id: 'meta-jurisdiction', icon: MapPin, label: 'Primary Jurisdiction', value: 'Mumbai, IN', mono: false },
+                { id: 'meta-jurisdiction', icon: MapPin, label: 'Primary Jurisdiction', value: caseData?.jurisdiction ?? 'Mumbai, IN', mono: false },
                 { id: 'meta-opened', icon: Calendar, label: 'Case Opened', value: '10-Jul-2026', mono: true },
               ]?.map((m) => {
                 const MetaIcon = m?.icon;
@@ -326,7 +374,7 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
               ) : (
                 /* Analyst: Upload SAR button */
                 <button
-                  onClick={() => { setGenerated(false); setSarUploadForm({ subject: 'Ananya Trading Pvt Ltd', accountId: 'HDFC-4521', pattern: 'Smurfing · Round-Trip', riskScore: '92', amount: '₹1,47,32,000', notes: '' }); setUploadedFile(null); setSarModalOpen(true); }}
+                  onClick={() => { setGenerated(false); setSarUploadForm({ subject: caseData?.subject ?? 'Unknown Entity', accountId: caseData?.accountId ?? '—', pattern: caseData?.pattern ?? '—', riskScore: String(caseData?.score ?? 0), amount: '—', notes: '' }); setUploadedFile(null); setSarModalOpen(true); }}
                   disabled={sarApproved}
                   className={`flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-md active:scale-95 transition-all duration-150 ${
                     sarApproved

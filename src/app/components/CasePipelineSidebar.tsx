@@ -117,7 +117,7 @@ export default function CasePipelineSidebar() {
               </div>
             ) : (
               cases.map((c) => (
-                <div key={c.id} className="px-4 py-3 hover:bg-muted/20 transition-colors">
+                <Link key={c.id} href={`/case-investigation-detail?case=${encodeURIComponent(c.id)}`} className="block px-4 py-3 hover:bg-muted/20 transition-colors">
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="min-w-0 flex-1">
                       <p className="text-[11px] font-mono text-muted-foreground">{c.id}</p>
@@ -132,7 +132,7 @@ export default function CasePipelineSidebar() {
                       <span className="font-mono">{c.daysOpen}d · {c.assignedAnalystName ?? c.officer}</span>
                     </div>
                   </div>
-                </div>
+                </Link>
               ))
             )}
           </div>
