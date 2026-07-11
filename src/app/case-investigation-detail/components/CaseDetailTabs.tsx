@@ -4,19 +4,22 @@ import React, { useState } from 'react';
 import CaseOverviewTab from './CaseOverviewTab';
 import TransactionsTab from './TransactionsTab';
 import SARTab from './SARTab';
+import ApprovalTimelineTab from './ApprovalTimelineTab';
 
 const tabs = [
   { id: 'tab-overview', label: 'Overview', key: 'overview' },
   { id: 'tab-transactions', label: 'Transaction Chain', key: 'transactions' },
   { id: 'tab-sar', label: 'SAR Report', key: 'sar' },
+  { id: 'tab-approval', label: 'Approval Timeline', key: 'approval' },
 ];
 
 interface CaseDetailTabsProps {
   activeTab?: string;
   setActiveTab?: (tab: string) => void;
+  caseRef?: string | null;
 }
 
-export default function CaseDetailTabs({ activeTab: externalTab, setActiveTab: externalSetTab }: CaseDetailTabsProps) {
+export default function CaseDetailTabs({ activeTab: externalTab, setActiveTab: externalSetTab, caseRef }: CaseDetailTabsProps) {
   const [internalTab, setInternalTab] = useState('overview');
 
   const activeTab = externalTab ?? internalTab;
@@ -44,6 +47,7 @@ export default function CaseDetailTabs({ activeTab: externalTab, setActiveTab: e
         {activeTab === 'overview' && <CaseOverviewTab />}
         {activeTab === 'transactions' && <TransactionsTab />}
         {activeTab === 'sar' && <SARTab />}
+        {activeTab === 'approval' && <ApprovalTimelineTab caseRef={caseRef} />}
       </div>
     </div>
   );

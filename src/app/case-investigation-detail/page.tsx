@@ -14,7 +14,7 @@ function CaseInvestigationDetailContent() {
   return (
     <AppLayout>
       <CaseDetailHeader caseRef={caseRef} onViewSAR={() => setActiveTab('sar')} />
-      <CaseDetailTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+      <CaseDetailTabs activeTab={activeTab} setActiveTab={setActiveTab} caseRef={caseRef} />
     </AppLayout>
   );
 }
