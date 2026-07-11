@@ -5,20 +5,8 @@ import Link from 'next/link';
 import StatusBadge from '@/components/ui/StatusBadge';
 import RiskBadge, { getRiskLevel } from '@/components/ui/RiskBadge';
 import Modal from '@/components/ui/Modal';
-import {
-  ArrowLeft,
-  AlertTriangle,
-  FileText,
-  CheckCircle,
-  Clock,
-  User,
-  Building2,
-  MapPin,
-  Calendar,
-  Loader2,
-  CalendarClock,
-} from 'lucide-react';
-import { createSARReport, getSARStatusForCase } from '@/lib/services/amlService';
+import { ArrowLeft, AlertTriangle, FileText, CheckCircle, Clock, User, Building2, MapPin, Calendar, Loader2, CalendarClock, UserCheck,  } from 'lucide-react';
+import { createSARReport, getSARStatusForCase, getAnalysts, assignCaseToAnalyst, getCaseAssignment } from '@/lib/services/amlService';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -36,6 +24,7 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
   const [sarModalOpen, setSarModalOpen] = useState(false);
   const [escalateModalOpen, setEscalateModalOpen] = useState(false);
   const [extensionModalOpen, setExtensionModalOpen] = useState(false);
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generated, setGenerated] = useState(false);
   const [escalated, setEscalated] = useState(false);
@@ -44,6 +33,13 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
   const [extensionDays, setExtensionDays] = useState('7');
   const [extensionSubmitted, setExtensionSubmitted] = useState(false);
   const [isSubmittingExtension, setIsSubmittingExtension] = useState(false);
+
+  // Assignment state
+  const [analysts, setAnalysts] = useState<{ id: string; fullName: string; email: string }[]>([]);
+  const [selectedAnalystId, setSelectedAnalystId] = useState('');
+  const [isAssigning, setIsAssigning] = useState(false);
+  const [assignmentDone, setAssignmentDone] = useState(false);
+  const [currentAssignee, setCurrentAssignee] = useState<string | null>(null);
 
   // Live SAR status from Supabase
   const [sarStatus, setSarStatus] = useState<{
@@ -61,7 +57,7 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
         day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
       })
     : generated
-    ? '11-Jul 12:10' :'—';
+    ? '11-Jul 12:10' : '—';
 
   const sarFiledDate = sarStatus?.approvedAt
     ? new Date(sarStatus.approvedAt).toLocaleString('en-IN', {
@@ -90,6 +86,15 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // Load current assignment
+  useEffect(() => {
+    async function loadAssignment() {
+      const data = await getCaseAssignment(CASE_REF);
+      if (data?.analystName) setCurrentAssignee(data.analystName);
+    }
+    loadAssignment();
+  }, []);
+
   const riskScore = 92;
   const riskLevel = getRiskLevel(riskScore);
 
@@ -106,7 +111,6 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
     });
     setIsGenerating(false);
     setGenerated(true);
-    // Reload SAR status after creation
     const data = await getSARStatusForCase(CASE_REF);
     if (data) setSarStatus(data);
   };
@@ -123,6 +127,27 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
     await new Promise((r) => setTimeout(r, 1000));
     setIsSubmittingExtension(false);
     setExtensionSubmitted(true);
+  };
+
+  const handleOpenAssignModal = async () => {
+    setAssignmentDone(false);
+    setSelectedAnalystId('');
+    const list = await getAnalysts();
+    setAnalysts(list);
+    setAssignModalOpen(true);
+  };
+
+  const handleConfirmAssignment = async () => {
+    if (!selectedAnalystId) return;
+    setIsAssigning(true);
+    const analyst = analysts.find((a) => a.id === selectedAnalystId);
+    const name = analyst?.fullName ?? 'Unknown Analyst';
+    const ok = await assignCaseToAnalyst(CASE_REF, selectedAnalystId, name);
+    setIsAssigning(false);
+    if (ok) {
+      setCurrentAssignee(name);
+      setAssignmentDone(true);
+    }
   };
 
   const timelineSteps = [
@@ -207,7 +232,13 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
                 { id: 'meta-account', icon: Building2, label: 'Primary Account', value: 'HDFC-4521', mono: true },
-                { id: 'meta-officer', icon: User, label: 'Assigned Officer', value: escalated ? 'Senior Director' : 'Priya Mehta', mono: false },
+                {
+                  id: 'meta-officer',
+                  icon: User,
+                  label: 'Assigned Analyst',
+                  value: currentAssignee ?? (escalated ? 'Senior Director' : 'Priya Mehta'),
+                  mono: false,
+                },
                 { id: 'meta-jurisdiction', icon: MapPin, label: 'Primary Jurisdiction', value: 'Mumbai, IN', mono: false },
                 { id: 'meta-opened', icon: Calendar, label: 'Case Opened', value: '10-Jul-2026', mono: true },
               ]?.map((m) => {
@@ -251,21 +282,32 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
             {/* Action buttons */}
             <div className="flex flex-col gap-2 w-full min-w-[160px]">
               {isSeniorOfficer ? (
-                /* Senior Officer: show Approve SAR info, not Generate SAR */
-                <div className={`flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-md border ${
-                  sarApproved
-                    ? 'bg-green-500/10 border-green-500/30 text-green-400'
-                    : sarExists
-                    ? 'bg-primary/10 border-primary text-primary' :'bg-muted border-border text-muted-foreground'
-                }`}>
-                  {sarApproved ? (
-                    <><CheckCircle size={13} />SAR Approved</>
-                  ) : sarExists ? (
-                    <><FileText size={13} />SAR Pending Review</>
-                  ) : (
-                    <><FileText size={13} />No SAR Yet</>
-                  )}
-                </div>
+                <>
+                  {/* Assign Analyst button — Senior Officer / Admin only */}
+                  <button
+                    onClick={handleOpenAssignModal}
+                    className="flex items-center justify-center gap-1.5 px-4 py-2 bg-primary text-white text-xs font-semibold rounded-md hover:bg-primary/90 active:scale-95 transition-all duration-150"
+                  >
+                    <UserCheck size={13} />
+                    {currentAssignee ? 'Reassign Analyst' : 'Assign Analyst'}
+                  </button>
+
+                  {/* SAR status indicator (read-only for senior officer) */}
+                  <div className={`flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-md border ${
+                    sarApproved
+                      ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                      : sarExists
+                      ? 'bg-primary/10 border-primary text-primary' :'bg-muted border-border text-muted-foreground'
+                  }`}>
+                    {sarApproved ? (
+                      <><CheckCircle size={13} />SAR Approved</>
+                    ) : sarExists ? (
+                      <><FileText size={13} />SAR Pending Review</>
+                    ) : (
+                      <><FileText size={13} />No SAR Yet</>
+                    )}
+                  </div>
+                </>
               ) : (
                 <button
                   onClick={() => { setGenerated(false); setSarModalOpen(true); }}
@@ -350,6 +392,98 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
           </div>
         </div>
       </div>
+
+      {/* ── Assign Analyst Modal ── */}
+      <Modal
+        open={assignModalOpen}
+        onClose={() => { setAssignModalOpen(false); setAssignmentDone(false); }}
+        title={`Assign Analyst — ${CASE_REF}`}
+        size="sm"
+      >
+        {!assignmentDone ? (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Select an AML Analyst to own this case. They will be responsible for investigation and SAR submission.
+            </p>
+
+            {analysts.length === 0 ? (
+              <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">
+                <Loader2 size={14} className="animate-spin mr-2" />
+                Loading analysts…
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {analysts.map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => setSelectedAnalystId(a.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md border text-left transition-all ${
+                      selectedAnalystId === a.id
+                        ? 'bg-primary/10 border-primary' :'border-border hover:bg-muted'
+                    }`}
+                  >
+                    <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                      <User size={13} className="text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-foreground">{a.fullName}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{a.email}</p>
+                    </div>
+                    {selectedAnalystId === a.id && (
+                      <CheckCircle size={14} className="text-primary shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {currentAssignee && (
+              <p className="text-[10px] text-muted-foreground">
+                Currently assigned to: <span className="font-semibold text-foreground">{currentAssignee}</span>
+              </p>
+            )}
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={handleConfirmAssignment}
+                disabled={isAssigning || !selectedAnalystId}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary text-white text-sm font-semibold rounded-md hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-60"
+              >
+                {isAssigning ? (
+                  <><Loader2 size={14} className="animate-spin" />Assigning…</>
+                ) : (
+                  <><UserCheck size={14} />Confirm Assignment</>
+                )}
+              </button>
+              <button
+                onClick={() => setAssignModalOpen(false)}
+                className="px-4 py-2.5 border border-border text-sm text-muted-foreground rounded-md hover:bg-muted transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-4">
+            <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-3">
+              <UserCheck size={24} className="text-primary" />
+            </div>
+            <p className="text-sm font-semibold text-foreground mb-1">Analyst Assigned</p>
+            <p className="text-xs text-muted-foreground mb-1">
+              <span className="font-semibold text-foreground">{currentAssignee}</span> is now responsible for {CASE_REF}.
+            </p>
+            <p className="text-[10px] text-muted-foreground mb-4">
+              They can now investigate and submit a SAR for senior officer review.
+            </p>
+            <button
+              onClick={() => { setAssignModalOpen(false); setAssignmentDone(false); }}
+              className="px-6 py-2 bg-primary text-white text-sm font-semibold rounded-md hover:bg-primary/90 transition-all active:scale-95"
+            >
+              Done
+            </button>
+          </div>
+        )}
+      </Modal>
 
       {/* SAR Modal */}
       <Modal

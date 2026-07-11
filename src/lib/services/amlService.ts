@@ -454,3 +454,79 @@ export async function getAllUserProfiles() {
     return [];
   }
 }
+
+// ─── CASE ASSIGNMENT ──────────────────────────────────────────────────────────
+
+export async function getAnalysts() {
+  const supabase = createClient();
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('id, full_name, email, role')
+      .eq('role', 'analyst')
+      .order('full_name');
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      return [];
+    }
+    return (data || []).map((u) => ({
+      id: u.id as string,
+      fullName: u.full_name as string,
+      email: u.email as string,
+    }));
+  } catch (e: any) {
+    console.error('getAnalysts:', e.message);
+    return [];
+  }
+}
+
+export async function assignCaseToAnalyst(
+  caseRef: string,
+  analystId: string,
+  analystName: string
+) {
+  const supabase = createClient();
+  try {
+    const { error } = await supabase
+      .from('cases')
+      .update({
+        assigned_to: analystId,
+        assigned_analyst_name: analystName,
+        assigned_officer: analystName,
+      })
+      .eq('case_ref', caseRef);
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      console.error('assignCaseToAnalyst error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (e: any) {
+    console.error('assignCaseToAnalyst:', e.message);
+    return false;
+  }
+}
+
+export async function getCaseAssignment(caseRef: string) {
+  const supabase = createClient();
+  try {
+    const { data, error } = await supabase
+      .from('cases')
+      .select('assigned_to, assigned_analyst_name, assigned_officer')
+      .eq('case_ref', caseRef)
+      .maybeSingle();
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      return null;
+    }
+    return data
+      ? {
+          analystId: data.assigned_to as string | null,
+          analystName: (data.assigned_analyst_name ?? data.assigned_officer) as string | null,
+        }
+      : null;
+  } catch (e: any) {
+    console.error('getCaseAssignment:', e.message);
+    return null;
+  }
+}
