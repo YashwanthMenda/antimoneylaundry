@@ -269,6 +269,42 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
         </div>
       )}
 
+      {/* Prominent Upload SAR banner for analysts when no SAR exists */}
+      {!isSeniorOfficer && !sarExists && !sarApproved && (
+        <div className="flex items-center justify-between gap-4 bg-primary/10 border border-primary/40 rounded-lg px-4 py-3 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+              <Upload size={15} className="text-primary" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-primary">SAR Required</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                This case requires a Suspicious Activity Report. Upload your SAR to send it for officer review.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setGenerated(false);
+              setSarUploadForm({
+                subject: caseData?.subject ?? 'Unknown Entity',
+                accountId: caseData?.accountId ?? '—',
+                pattern: caseData?.pattern ?? '—',
+                riskScore: String(caseData?.score ?? 0),
+                amount: '—',
+                notes: '',
+              });
+              setUploadedFile(null);
+              setSarModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-xs font-bold rounded-md hover:bg-primary/90 active:scale-95 transition-all duration-150 shadow-md shadow-primary/30 shrink-0"
+          >
+            <Upload size={13} />
+            Upload SAR
+          </button>
+        </div>
+      )}
+
       <div className="card-elevated p-6 mb-5">
         <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-6">
           {/* Left — Case identity */}
@@ -372,20 +408,43 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
                   </div>
                 </>
               ) : (
-                /* Analyst: Upload SAR button */
-                <button
-                  onClick={() => { setGenerated(false); setSarUploadForm({ subject: caseData?.subject ?? 'Unknown Entity', accountId: caseData?.accountId ?? '—', pattern: caseData?.pattern ?? '—', riskScore: String(caseData?.score ?? 0), amount: '—', notes: '' }); setUploadedFile(null); setSarModalOpen(true); }}
-                  disabled={sarApproved}
-                  className={`flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-md active:scale-95 transition-all duration-150 ${
-                    sarApproved
-                      ? 'bg-green-500/10 border border-green-500/30 text-green-400 cursor-default'
-                      : sarExists
-                      ? 'bg-primary/10 border border-primary text-primary hover:bg-primary/20' :'bg-primary text-white hover:bg-primary/90'
-                  }`}
-                >
-                  {sarApproved ? <CheckCircle size={13} /> : sarExists ? <FileText size={13} /> : <Upload size={13} />}
-                  {sarApproved ? 'SAR Filed' : sarExists ? 'SAR Submitted' : 'Upload SAR'}
-                </button>
+                /* Analyst: Upload SAR button — always prominent */
+                <>
+                  {sarApproved ? (
+                    <div className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-green-500/10 border border-green-500/30 text-green-400 text-xs font-semibold rounded-md">
+                      <CheckCircle size={13} />
+                      SAR Filed
+                    </div>
+                  ) : sarExists ? (
+                    <button
+                      onClick={() => { setSarModalOpen(true); }}
+                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-primary/10 border border-primary text-primary text-xs font-semibold rounded-md hover:bg-primary/20 active:scale-95 transition-all duration-150"
+                    >
+                      <FileText size={13} />
+                      SAR Submitted
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setGenerated(false);
+                        setSarUploadForm({
+                          subject: caseData?.subject ?? 'Unknown Entity',
+                          accountId: caseData?.accountId ?? '—',
+                          pattern: caseData?.pattern ?? '—',
+                          riskScore: String(caseData?.score ?? 0),
+                          amount: '—',
+                          notes: '',
+                        });
+                        setUploadedFile(null);
+                        setSarModalOpen(true);
+                      }}
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white text-xs font-bold rounded-md hover:bg-primary/90 active:scale-95 transition-all duration-150 shadow-md shadow-primary/30 ring-2 ring-primary/20"
+                    >
+                      <Upload size={14} />
+                      Upload SAR
+                    </button>
+                  )}
+                </>
               )}
               <button
                 onClick={() => setEscalateModalOpen(true)}
