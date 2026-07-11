@@ -30,6 +30,8 @@ const CASE_REF = 'CASE-0847';
 
 export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
   const { user } = useAuth();
+  const userRole = (user as any)?.user_metadata?.role ?? (user as any)?.role ?? '';
+  const isSeniorOfficer = userRole === 'senior_officer' || userRole === 'admin';
 
   const [sarModalOpen, setSarModalOpen] = useState(false);
   const [escalateModalOpen, setEscalateModalOpen] = useState(false);
@@ -131,8 +133,8 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
       id: 'step-invest',
       label: 'Investigating',
       date: '11-Jul 08:30',
-      active: !escalated && !sarApproved,
-      done: escalated || sarApproved,
+      active: !escalated && !sarApproved && !sarExists,
+      done: sarApproved || escalated || sarExists,
     },
     {
       id: 'step-sar',
@@ -248,17 +250,35 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
 
             {/* Action buttons */}
             <div className="flex flex-col gap-2 w-full min-w-[160px]">
-              <button
-                onClick={() => { setGenerated(false); setSarModalOpen(true); }}
-                disabled={sarApproved}
-                className={`flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-md active:scale-95 transition-all duration-150 ${
+              {isSeniorOfficer ? (
+                /* Senior Officer: show Approve SAR info, not Generate SAR */
+                <div className={`flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-md border ${
                   sarApproved
-                    ? 'bg-green-500/10 border border-green-500/30 text-green-400 cursor-default' :'bg-primary text-white hover:bg-primary/90'
-                }`}
-              >
-                {sarApproved ? <CheckCircle size={13} /> : <FileText size={13} />}
-                {sarApproved ? 'SAR Filed' : 'Generate SAR'}
-              </button>
+                    ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                    : sarExists
+                    ? 'bg-primary/10 border-primary text-primary' :'bg-muted border-border text-muted-foreground'
+                }`}>
+                  {sarApproved ? (
+                    <><CheckCircle size={13} />SAR Approved</>
+                  ) : sarExists ? (
+                    <><FileText size={13} />SAR Pending Review</>
+                  ) : (
+                    <><FileText size={13} />No SAR Yet</>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setGenerated(false); setSarModalOpen(true); }}
+                  disabled={sarApproved}
+                  className={`flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-md active:scale-95 transition-all duration-150 ${
+                    sarApproved
+                      ? 'bg-green-500/10 border border-green-500/30 text-green-400 cursor-default' :'bg-primary text-white hover:bg-primary/90'
+                  }`}
+                >
+                  {sarApproved ? <CheckCircle size={13} /> : <FileText size={13} />}
+                  {sarApproved ? 'SAR Filed' : 'Generate SAR'}
+                </button>
+              )}
               <button
                 onClick={() => setEscalateModalOpen(true)}
                 disabled={escalated}
