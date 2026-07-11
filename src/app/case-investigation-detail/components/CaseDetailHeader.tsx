@@ -323,17 +323,21 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
         </div>
       )}
 
-      {/* Prominent Upload SAR banner for analysts when no SAR exists */}
-      {!isSeniorOfficer && !sarExists && !sarApproved && (
+      {/* Upload SAR banner for analysts — always visible */}
+      {!isSeniorOfficer && (
         <div className="flex items-center justify-between gap-4 bg-primary/10 border border-primary/40 rounded-lg px-4 py-3 mb-4">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
               <Upload size={15} className="text-primary" />
             </div>
             <div>
-              <p className="text-xs font-semibold text-primary">SAR Required</p>
+              <p className="text-xs font-semibold text-primary">
+                {sarApproved ? 'Submit New SAR Report' : 'SAR Required'}
+              </p>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                This case requires a Suspicious Activity Report. Upload your SAR to send it for officer review.
+                {sarApproved
+                  ? 'SAR has been approved. You can upload a new SAR report for this case.'
+                  : 'This case requires a Suspicious Activity Report. Upload your SAR to send it for officer review.'}
               </p>
             </div>
           </div>
@@ -452,27 +456,24 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
               ) : (
                 /* Analyst: Upload SAR button — always prominent */
                 <>
-                  {sarApproved ? (
-                    <div className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-green-500/10 border border-green-500/30 text-green-400 text-xs font-semibold rounded-md">
-                      <CheckCircle size={13} />
-                      SAR Filed
+                  <button
+                    onClick={openSarModal}
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white text-xs font-bold rounded-md hover:bg-primary/90 active:scale-95 transition-all duration-150 shadow-md shadow-primary/30 ring-2 ring-primary/20"
+                  >
+                    <Upload size={14} />
+                    Upload SAR
+                  </button>
+                  {sarApproved && (
+                    <div className="flex items-center justify-center gap-1.5 px-4 py-1.5 bg-green-500/10 border border-green-500/30 text-green-400 text-[10px] font-semibold rounded-md">
+                      <CheckCircle size={11} />
+                      Previous SAR Approved
                     </div>
-                  ) : sarExists ? (
-                    <button
-                      onClick={openSarModal}
-                      className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-primary/10 border border-primary text-primary text-xs font-semibold rounded-md hover:bg-primary/20 active:scale-95 transition-all duration-150"
-                    >
-                      <FileText size={13} />
-                      SAR Submitted
-                    </button>
-                  ) : (
-                    <button
-                      onClick={openSarModal}
-                      className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white text-xs font-bold rounded-md hover:bg-primary/90 active:scale-95 transition-all duration-150 shadow-md shadow-primary/30 ring-2 ring-primary/20"
-                    >
-                      <Upload size={14} />
-                      Upload SAR
-                    </button>
+                  )}
+                  {!sarApproved && sarExists && (
+                    <div className="flex items-center justify-center gap-1.5 px-4 py-1.5 bg-primary/10 border border-primary/30 text-primary text-[10px] font-semibold rounded-md">
+                      <FileText size={11} />
+                      SAR Pending Review
+                    </div>
                   )}
                 </>
               )}
