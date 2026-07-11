@@ -7,10 +7,11 @@ import Modal from '@/components/ui/Modal';
 import Link from 'next/link';
 import {
   FileText, Download, Send, CheckCircle, AlertTriangle, Search,
-  Filter, ChevronDown, Eye, Plus, Loader2,
+  Filter, ChevronDown, Eye, Plus, Loader2, ShieldCheck,
 } from 'lucide-react';
-import { getSARReports, updateSARStatus } from '@/lib/services/amlService';
+import { getSARReports, updateSARStatus, approveSAR } from '@/lib/services/amlService';
 import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface SARReport {
   id: string;
@@ -64,6 +65,10 @@ function exportSARPDF(sar: SARReport) {
 }
 
 export default function SARReportsPage() {
+  const { user } = useAuth();
+  const userRole = (user as any)?.user_metadata?.role ?? (user as any)?.role ?? '';
+  const isOfficer = userRole === 'senior_officer' || userRole === 'admin';
+
   const [statusFilter, setStatusFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [sortCol, setSortCol] = useState<keyof SARReport>('generatedAt');
@@ -74,6 +79,10 @@ export default function SARReportsPage() {
   const [submitModal, setSubmitModal] = useState<SARReport | null>(null);
   const [submitDone, setSubmitDone] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [approveModal, setApproveModal] = useState<SARReport | null>(null);
+  const [approveDone, setApproveDone] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -141,16 +150,37 @@ export default function SARReportsPage() {
     setSubmitDone(true);
   };
 
+  const handleOpenApprove = (sar: SARReport) => {
+    setApproveDone(false);
+    setApproveModal(sar);
+  };
+
+  const handleConfirmApprove = async () => {
+    if (!approveModal) return;
+    setIsApproving(true);
+    const fiuRef = await approveSAR(approveModal.dbId);
+    setSarReports((prev) =>
+      prev.map((r) =>
+        r.id === approveModal.id
+          ? { ...r, status: 'Submitted', fiuRef: fiuRef ?? r.fiuRef }
+          : r
+      )
+    );
+    setIsApproving(false);
+    setApproveDone(true);
+  };
+
   // Derived stats
   const totalSARs = sarReports.length;
   const drafts = sarReports.filter((r) => r.status === 'Draft').length;
   const submitted = sarReports.filter((r) => r.status === 'Submitted').length;
   const acknowledged = sarReports.filter((r) => r.status === 'Acknowledged').length;
+  const pendingReview = sarReports.filter((r) => r.status === 'Pending Review').length;
 
   const statCards = [
     { id: 'sc-total', label: 'Total SARs', value: String(totalSARs), sub: 'This quarter', color: 'text-primary' },
-    { id: 'sc-draft', label: 'Drafts', value: String(drafts), sub: 'Awaiting review', color: 'text-amber-400' },
-    { id: 'sc-submitted', label: 'Submitted', value: String(submitted), sub: 'Filed with FIU-IND', color: 'text-blue-400' },
+    { id: 'sc-pending', label: 'Pending Review', value: String(pendingReview), sub: 'Awaiting officer approval', color: 'text-blue-400' },
+    { id: 'sc-submitted', label: 'Submitted', value: String(submitted), sub: 'Filed with FIU-IND', color: 'text-green-400' },
     { id: 'sc-ack', label: 'Acknowledged', value: String(acknowledged), sub: 'Confirmed by FIU-IND', color: 'text-green-400' },
   ];
 
@@ -188,6 +218,21 @@ export default function SARReportsPage() {
           </div>
         ))}
       </div>
+
+      {/* Officer approval notice */}
+      {isOfficer && pendingReview > 0 && (
+        <div className="flex items-start gap-3 bg-blue-500/5 border border-blue-500/20 rounded-lg px-4 py-3 mb-6">
+          <ShieldCheck size={14} className="text-blue-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs font-semibold text-foreground">
+              {pendingReview} SAR{pendingReview > 1 ? 's' : ''} awaiting your approval
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              As Senior Officer, you can approve analyst-submitted SARs. Approving will mark the SAR as Submitted and complete the analyst's case timeline.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* FATF notice */}
       <div className="flex items-start gap-3 bg-primary/5 border border-primary/20 rounded-lg px-4 py-3 mb-6">
@@ -315,7 +360,25 @@ export default function SARReportsPage() {
                             <Download size={13} />
                           )}
                         </button>
-                        {r.status !== 'Submitted' && r.status !== 'Acknowledged' && (
+
+                        {/* Approve button — Senior Officer / Admin only, for Pending Review SARs */}
+                        {isOfficer && r.status === 'Pending Review' && (
+                          <button
+                            onClick={() => handleOpenApprove(r)}
+                            disabled={approvingId === r.id}
+                            className="p-1.5 rounded-md hover:bg-blue-500/10 text-blue-400 hover:text-blue-300 transition-all duration-150 disabled:opacity-50"
+                            aria-label="Approve SAR"
+                            title="Approve SAR"
+                          >
+                            {approvingId === r.id ? (
+                              <Loader2 size={13} className="animate-spin" />
+                            ) : (
+                              <ShieldCheck size={13} />
+                            )}
+                          </button>
+                        )}
+
+                        {!isOfficer && r.status !== 'Submitted' && r.status !== 'Acknowledged' && (
                           <button
                             onClick={() => handleOpenSubmit(r)}
                             className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-primary transition-all duration-150"
@@ -339,9 +402,67 @@ export default function SARReportsPage() {
         )}
       </div>
 
+      {/* Approve Modal — Senior Officer */}
+      {approveModal && (
+        <Modal open={!!approveModal} onClose={() => setApproveModal(null)} title="Approve SAR Report" size="sm">
+          <div className="space-y-4">
+            {!approveDone ? (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  You are approving{' '}
+                  <span className="text-foreground font-semibold">{approveModal.id}</span> submitted by the analyst for{' '}
+                  <span className="text-foreground font-semibold">{approveModal.subject}</span>.
+                </p>
+                <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-400 space-y-1">
+                  <p className="font-semibold">Approving this SAR will:</p>
+                  <ul className="list-disc list-inside space-y-0.5 text-blue-300">
+                    <li>Mark the SAR as Submitted to FIU-IND</li>
+                    <li>Complete the analyst's case timeline (all stages)</li>
+                    <li>Generate a FIU reference number</li>
+                  </ul>
+                </div>
+                <button
+                  onClick={handleConfirmApprove}
+                  disabled={isApproving}
+                  className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white text-xs font-semibold py-2.5 rounded-md hover:bg-blue-500 disabled:opacity-60 transition-colors"
+                >
+                  {isApproving ? (
+                    <><Loader2 size={13} className="animate-spin" /> Approving…</>
+                  ) : (
+                    <><ShieldCheck size={13} /> Approve &amp; Submit SAR</>
+                  )}
+                </button>
+                <button
+                  onClick={() => setApproveModal(null)}
+                  className="w-full py-2 border border-border text-xs text-muted-foreground rounded-md hover:bg-muted transition-all"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <div className="text-center py-4">
+                <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-3">
+                  <CheckCircle size={20} className="text-green-400" />
+                </div>
+                <p className="text-sm font-semibold text-foreground mb-1">SAR Approved &amp; Submitted</p>
+                <p className="text-xs text-muted-foreground mb-2">
+                  The analyst's case timeline has been fully completed.
+                </p>
+                <button
+                  onClick={() => setApproveModal(null)}
+                  className="text-xs text-primary hover:underline font-medium"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
       {/* Submit Modal */}
       {submitModal && (
-        <Modal isOpen={!!submitModal} onClose={() => setSubmitModal(null)} title="Submit SAR to FIU-IND">
+        <Modal open={!!submitModal} onClose={() => setSubmitModal(null)} title="Submit SAR to FIU-IND">
           <div className="space-y-4">
             {!submitDone ? (
               <>

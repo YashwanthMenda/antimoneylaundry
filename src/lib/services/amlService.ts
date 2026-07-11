@@ -250,6 +250,60 @@ export async function updateSARStatus(dbId: string, status: string, fiuRef?: str
   }
 }
 
+// ─── SAR APPROVAL ─────────────────────────────────────────────────────────────
+
+export async function approveSAR(dbId: string) {
+  const supabase = createClient();
+  try {
+    const now = new Date().toISOString();
+    const fiuRef = `FIU-IND/2026/SAR/${Date.now().toString().slice(-6)}`;
+    const { error } = await supabase
+      .from('sar_reports')
+      .update({
+        sar_status: 'Submitted',
+        approved_at: now,
+        fiu_ref: fiuRef,
+      })
+      .eq('id', dbId);
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      console.error('approveSAR update error:', error.message);
+      return null;
+    }
+    return fiuRef;
+  } catch (e: any) {
+    console.error('approveSAR:', e.message);
+    return null;
+  }
+}
+
+export async function getSARStatusForCase(caseRef: string) {
+  const supabase = createClient();
+  try {
+    const { data, error } = await supabase
+      .from('sar_reports')
+      .select('sar_status, approved_at, generated_at, created_at')
+      .eq('case_ref', caseRef)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      return null;
+    }
+    return data
+      ? {
+          status: data.sar_status as string,
+          approvedAt: data.approved_at,
+          generatedAt: data.generated_at ?? data.created_at,
+        }
+      : null;
+  } catch (e: any) {
+    console.error('getSARStatusForCase:', e.message);
+    return null;
+  }
+}
+
 export async function createSARReport(params: {
   alertId?: string;
   caseRef: string;
