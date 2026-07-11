@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
 import {
   LayoutDashboard, AlertTriangle, FolderOpen, FileText,
-  Network, Users, Settings, ChevronLeft, ChevronRight, Bell, Shield,
+  Network, Users, Settings, ChevronLeft, ChevronRight, Bell, Shield, FilePlus,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,6 +26,7 @@ const navItems: NavItem[] = [
   { id: 'nav-dashboard', label: 'Dashboard', href: '/', icon: LayoutDashboard, group: 'MONITORING' },
   { id: 'nav-alerts', label: 'Alerts', href: '/alerts', icon: AlertTriangle, badgeKey: 'alerts', group: 'MONITORING' },
   { id: 'nav-cases', label: 'Case Management', href: '/case-investigation-detail', icon: FolderOpen, badgeKey: 'cases', group: 'INVESTIGATION' },
+  { id: 'nav-file-case', label: 'File a Case', href: '/file-a-case', icon: FilePlus, group: 'INVESTIGATION' },
   { id: 'nav-network', label: 'Network Graph', href: '/network', icon: Network, group: 'INVESTIGATION' },
   { id: 'nav-sar', label: 'SAR Reports', href: '/sar-reports', icon: FileText, badgeKey: 'sar', group: 'COMPLIANCE' },
   { id: 'nav-entities', label: 'Entities', href: '/entities', icon: Users, group: 'COMPLIANCE' },
