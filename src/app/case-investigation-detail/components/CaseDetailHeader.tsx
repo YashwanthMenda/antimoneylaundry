@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import StatusBadge from '@/components/ui/StatusBadge';
 import RiskBadge, { getRiskLevel } from '@/components/ui/RiskBadge';
 import Modal from '@/components/ui/Modal';
-import { ArrowLeft, AlertTriangle, FileText, CheckCircle, Clock, User, Building2, MapPin, Calendar, Loader2, CalendarClock, UserCheck,  } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, FileText, CheckCircle, Clock, User, Building2, MapPin, Calendar, Loader2, CalendarClock, UserCheck, Upload, Paperclip, X } from 'lucide-react';
 import { createSARReport, getSARStatusForCase, getAnalysts, assignCaseToAnalyst, getCaseAssignment } from '@/lib/services/amlService';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -33,6 +33,18 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
   const [extensionDays, setExtensionDays] = useState('7');
   const [extensionSubmitted, setExtensionSubmitted] = useState(false);
   const [isSubmittingExtension, setIsSubmittingExtension] = useState(false);
+
+  // SAR Upload form state (analyst)
+  const [sarUploadForm, setSarUploadForm] = useState({
+    subject: 'Ananya Trading Pvt Ltd',
+    accountId: 'HDFC-4521',
+    pattern: 'Smurfing · Round-Trip',
+    riskScore: '92',
+    amount: '₹1,47,32,000',
+    notes: '',
+  });
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Assignment state
   const [analysts, setAnalysts] = useState<{ id: string; fullName: string; email: string }[]>([]);
@@ -63,7 +75,7 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
     ? new Date(sarStatus.approvedAt).toLocaleString('en-IN', {
         day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
       })
-    : '—';
+    : sarApproved ? '11 Jul, 20:36' : '—';
 
   // Load initial SAR status and subscribe to real-time changes
   useEffect(() => {
@@ -98,15 +110,15 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
   const riskScore = 92;
   const riskLevel = getRiskLevel(riskScore);
 
-  const handleGenerateSAR = async () => {
+  const handleUploadSAR = async () => {
     setIsGenerating(true);
     await createSARReport({
       caseRef: CASE_REF,
-      subject: 'Ananya Trading Pvt Ltd',
-      accountId: 'HDFC-4521',
-      pattern: 'Smurfing · Round-Trip',
-      riskScore: 92,
-      amount: '₹1,47,32,000',
+      subject: sarUploadForm.subject,
+      accountId: sarUploadForm.accountId,
+      pattern: sarUploadForm.pattern,
+      riskScore: parseInt(sarUploadForm.riskScore, 10) || 92,
+      amount: sarUploadForm.amount,
       officer: (user as any)?.user_metadata?.full_name ?? 'Analyst Sharma',
     });
     setIsGenerating(false);
@@ -150,6 +162,9 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
     }
   };
 
+  // All 6 stages are ticked when officer has approved/acted on the SAR
+  const allDone = sarApproved;
+
   const timelineSteps = [
     { id: 'step-alert', label: 'Alert Generated', date: '10-Jul 09:12', done: true },
     { id: 'step-triage', label: 'Triaged', date: '10-Jul 09:45', done: true },
@@ -158,21 +173,21 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
       id: 'step-invest',
       label: 'Investigating',
       date: '11-Jul 08:30',
-      active: !escalated && !sarApproved && !sarExists,
-      done: sarApproved || escalated || sarExists,
+      active: !allDone && !escalated && !sarExists,
+      done: allDone || escalated || sarExists,
     },
     {
       id: 'step-sar',
       label: 'SAR Pending',
-      date: sarPendingDate,
-      active: sarExists && !sarApproved,
-      done: sarApproved,
+      date: allDone ? '11 Jul, 20:32' : sarPendingDate,
+      active: !allDone && sarExists,
+      done: allDone,
     },
     {
       id: 'step-filed',
       label: 'SAR Filed',
-      date: sarFiledDate,
-      done: sarApproved,
+      date: allDone ? '11 Jul, 20:36' : sarFiledDate,
+      done: allDone,
     },
   ];
 
@@ -292,7 +307,7 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
                     {currentAssignee ? 'Reassign Analyst' : 'Assign Analyst'}
                   </button>
 
-                  {/* SAR status indicator (read-only for senior officer) */}
+                  {/* SAR status indicator (read-only for senior officer — no generate button) */}
                   <div className={`flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-md border ${
                     sarApproved
                       ? 'bg-green-500/10 border-green-500/30 text-green-400'
@@ -309,16 +324,19 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
                   </div>
                 </>
               ) : (
+                /* Analyst: Upload SAR button */
                 <button
-                  onClick={() => { setGenerated(false); setSarModalOpen(true); }}
+                  onClick={() => { setGenerated(false); setSarUploadForm({ subject: 'Ananya Trading Pvt Ltd', accountId: 'HDFC-4521', pattern: 'Smurfing · Round-Trip', riskScore: '92', amount: '₹1,47,32,000', notes: '' }); setUploadedFile(null); setSarModalOpen(true); }}
                   disabled={sarApproved}
                   className={`flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-md active:scale-95 transition-all duration-150 ${
                     sarApproved
-                      ? 'bg-green-500/10 border border-green-500/30 text-green-400 cursor-default' :'bg-primary text-white hover:bg-primary/90'
+                      ? 'bg-green-500/10 border border-green-500/30 text-green-400 cursor-default'
+                      : sarExists
+                      ? 'bg-primary/10 border border-primary text-primary hover:bg-primary/20' :'bg-primary text-white hover:bg-primary/90'
                   }`}
                 >
-                  {sarApproved ? <CheckCircle size={13} /> : <FileText size={13} />}
-                  {sarApproved ? 'SAR Filed' : 'Generate SAR'}
+                  {sarApproved ? <CheckCircle size={13} /> : sarExists ? <FileText size={13} /> : <Upload size={13} />}
+                  {sarApproved ? 'SAR Filed' : sarExists ? 'SAR Submitted' : 'Upload SAR'}
                 </button>
               )}
               <button
@@ -342,7 +360,7 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
           </div>
         </div>
 
-        {/* Timeline progress */}
+        {/* Timeline progress — all 6 stages tick when officer acts on SAR */}
         <div className="mt-5 pt-5 border-t border-border">
           <div className="flex items-center gap-3 overflow-x-auto scrollbar-thin pb-1">
             {timelineSteps?.map((step, i) => (
@@ -485,43 +503,119 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
         )}
       </Modal>
 
-      {/* SAR Modal */}
+      {/* ── SAR Upload Modal (Analyst only) ── */}
       <Modal
         open={sarModalOpen}
         onClose={() => { setSarModalOpen(false); setGenerated(false); }}
-        title={`Generate SAR — ${CASE_REF}`}
+        title={`Upload SAR — ${CASE_REF}`}
         size="md"
       >
         {!generated ? (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              This will auto-generate a Suspicious Activity Report pre-populated with
-              SHAP analysis, transaction chain, and FATF guideline references.
+              Complete the SAR details below and optionally attach a supporting document. The report will be sent to the Senior Officer for review.
             </p>
-            <div className="space-y-2">
-              {[
-                'FATF Recommendation 20 — Reporting obligation',
-                'FATF Recommendation 10 — Customer due diligence',
-                '47 structuring transactions identified',
-                'SHAP explanation included',
-                'Transaction chain: 6 hops across 3 jurisdictions',
-              ]?.map((item, index) => (
-                <div key={`sar-item-${index}`} className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <CheckCircle size={12} className="text-risk-low shrink-0" />
-                  {item}
-                </div>
-              ))}
+
+            {/* Form fields */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Subject / Entity</label>
+                <input
+                  type="text"
+                  value={sarUploadForm.subject}
+                  onChange={(e) => setSarUploadForm((f) => ({ ...f, subject: e.target.value }))}
+                  className="w-full bg-muted border border-border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Account ID</label>
+                <input
+                  type="text"
+                  value={sarUploadForm.accountId}
+                  onChange={(e) => setSarUploadForm((f) => ({ ...f, accountId: e.target.value }))}
+                  className="w-full bg-muted border border-border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Suspicious Pattern</label>
+                <input
+                  type="text"
+                  value={sarUploadForm.pattern}
+                  onChange={(e) => setSarUploadForm((f) => ({ ...f, pattern: e.target.value }))}
+                  className="w-full bg-muted border border-border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Risk Score</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={sarUploadForm.riskScore}
+                  onChange={(e) => setSarUploadForm((f) => ({ ...f, riskScore: e.target.value }))}
+                  className="w-full bg-muted border border-border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Total Suspicious Amount</label>
+                <input
+                  type="text"
+                  value={sarUploadForm.amount}
+                  onChange={(e) => setSarUploadForm((f) => ({ ...f, amount: e.target.value }))}
+                  className="w-full bg-muted border border-border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Investigation Notes</label>
+                <textarea
+                  value={sarUploadForm.notes}
+                  onChange={(e) => setSarUploadForm((f) => ({ ...f, notes: e.target.value }))}
+                  placeholder="Summarise key findings, evidence, and recommended actions..."
+                  rows={3}
+                  className="w-full bg-muted border border-border rounded-md px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition-colors resize-none"
+                />
+              </div>
             </div>
-            <div className="flex gap-3 pt-2">
+
+            {/* File attachment */}
+            <div>
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1.5">Attach SAR Document (optional)</label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.xlsx"
+                className="hidden"
+                onChange={(e) => setUploadedFile(e.target.files?.[0] ?? null)}
+              />
+              {uploadedFile ? (
+                <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 border border-primary rounded-md">
+                  <Paperclip size={12} className="text-primary shrink-0" />
+                  <span className="text-xs text-foreground flex-1 truncate">{uploadedFile.name}</span>
+                  <button onClick={() => setUploadedFile(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+                    <X size={12} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-dashed border-border rounded-md text-xs text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                >
+                  <Upload size={12} />
+                  Click to attach PDF / Word / Excel
+                </button>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-1">
               <button
-                onClick={handleGenerateSAR}
-                disabled={isGenerating}
+                onClick={handleUploadSAR}
+                disabled={isGenerating || !sarUploadForm.subject.trim() || !sarUploadForm.accountId.trim()}
                 className="flex-1 flex items-center justify-center gap-2 bg-primary text-white text-sm font-semibold py-2.5 rounded-md hover:bg-primary/90 active:scale-95 transition-all duration-150 disabled:opacity-60"
               >
                 {isGenerating ? (
-                  <><Loader2 size={14} className="animate-spin" />Generating SAR…</>
+                  <><Loader2 size={14} className="animate-spin" />Submitting SAR…</>
                 ) : (
-                  'Generate & Preview SAR'
+                  <><Upload size={14} />Submit SAR for Review</>
                 )}
               </button>
               <button
@@ -537,12 +631,12 @@ export default function CaseDetailHeader({ onViewSAR }: CaseDetailHeaderProps) {
             <div className="w-12 h-12 rounded-full bg-risk-low/20 flex items-center justify-center mx-auto mb-3">
               <CheckCircle size={24} className="text-risk-low" />
             </div>
-            <p className="text-sm font-semibold text-foreground mb-1">SAR Generated Successfully</p>
+            <p className="text-sm font-semibold text-foreground mb-1">SAR Submitted Successfully</p>
             <p className="text-xs text-muted-foreground mb-1">
               SAR is now pending Senior Officer review.
             </p>
             <p className="text-[10px] text-muted-foreground mb-4">
-              Once approved, your case timeline will show SAR Filed as complete.
+              Once the officer acts on it, all case timeline stages will be marked complete.
             </p>
             <div className="flex gap-3 justify-center">
               <button
