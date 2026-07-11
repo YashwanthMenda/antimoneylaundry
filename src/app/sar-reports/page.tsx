@@ -7,9 +7,9 @@ import Modal from '@/components/ui/Modal';
 import Link from 'next/link';
 import {
   FileText, Download, Send, CheckCircle, AlertTriangle, Search,
-  Filter, ChevronDown, Eye, Plus, Loader2, ShieldCheck,
+  Filter, ChevronDown, Eye, Plus, Loader2, ShieldCheck, XCircle, RotateCcw,
 } from 'lucide-react';
-import { getSARReports, updateSARStatus, approveSAR } from '@/lib/services/amlService';
+import { getSARReports, updateSARStatus, approveSAR, sendSARToOfficer } from '@/lib/services/amlService';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -28,13 +28,14 @@ interface SARReport {
   dbId: string;
 }
 
-const statusFilters = ['All', 'Draft', 'Pending Review', 'Submitted', 'Acknowledged'];
+const statusFilters = ['All', 'Draft', 'Pending Review', 'Submitted', 'Acknowledged', 'Rejected'];
 
 const statusColors: Record<string, string> = {
   Draft: 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
   'Pending Review': 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
   Submitted: 'bg-primary/10 text-primary border border-primary/20',
   Acknowledged: 'bg-green-500/10 text-green-400 border border-green-500/20',
+  Rejected: 'bg-red-500/10 text-red-400 border border-red-500/20',
 };
 
 function exportSARPDF(sar: SARReport) {
@@ -68,6 +69,7 @@ export default function SARReportsPage() {
   const { user } = useAuth();
   const userRole = (user as any)?.user_metadata?.role ?? (user as any)?.role ?? '';
   const isOfficer = userRole === 'senior_officer' || userRole === 'admin';
+  const analystName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Analyst';
 
   const [statusFilter, setStatusFilter] = useState('All');
   const [search, setSearch] = useState('');
@@ -76,9 +78,18 @@ export default function SARReportsPage() {
   const [sarReports, setSarReports] = useState<SARReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // Send to Officer modal (analyst)
+  const [sendModal, setSendModal] = useState<SARReport | null>(null);
+  const [sendDone, setSendDone] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+
+  // Submit to FIU modal (legacy)
   const [submitModal, setSubmitModal] = useState<SARReport | null>(null);
   const [submitDone, setSubmitDone] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Approve modal (officer)
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [approveModal, setApproveModal] = useState<SARReport | null>(null);
   const [approveDone, setApproveDone] = useState(false);
@@ -132,6 +143,26 @@ export default function SARReportsPage() {
     setTimeout(() => { exportSARPDF(sar); setDownloadingId(null); }, 600);
   };
 
+  // Send to Officer
+  const handleOpenSend = (sar: SARReport) => {
+    setSendDone(false);
+    setSendModal(sar);
+  };
+
+  const handleConfirmSend = async () => {
+    if (!sendModal) return;
+    setIsSending(true);
+    const ok = await sendSARToOfficer(sendModal.dbId, analystName);
+    if (ok) {
+      setSarReports((prev) =>
+        prev.map((r) => r.id === sendModal.id ? { ...r, status: 'Pending Review' } : r)
+      );
+    }
+    setIsSending(false);
+    setSendDone(true);
+  };
+
+  // Submit to FIU (legacy direct submit)
   const handleOpenSubmit = (sar: SARReport) => {
     setSubmitDone(false);
     setSubmitModal(sar);
@@ -150,6 +181,7 @@ export default function SARReportsPage() {
     setSubmitDone(true);
   };
 
+  // Officer Approve
   const handleOpenApprove = (sar: SARReport) => {
     setApproveDone(false);
     setApproveModal(sar);
@@ -179,7 +211,7 @@ export default function SARReportsPage() {
 
   const statCards = [
     { id: 'sc-total', label: 'Total SARs', value: String(totalSARs), sub: 'This quarter', color: 'text-primary' },
-    { id: 'sc-pending', label: 'Pending Review', value: String(pendingReview), sub: 'Awaiting officer approval', color: 'text-blue-400' },
+    { id: 'sc-pending', label: 'Pending Review', value: String(pendingReview), sub: 'Sent to officer', color: 'text-blue-400' },
     { id: 'sc-submitted', label: 'Submitted', value: String(submitted), sub: 'Filed with FIU-IND', color: 'text-green-400' },
     { id: 'sc-ack', label: 'Acknowledged', value: String(acknowledged), sub: 'Confirmed by FIU-IND', color: 'text-green-400' },
   ];
@@ -219,16 +251,31 @@ export default function SARReportsPage() {
         ))}
       </div>
 
+      {/* Analyst workflow notice */}
+      {!isOfficer && drafts > 0 && (
+        <div className="flex items-start gap-3 bg-amber-500/5 border border-amber-500/20 rounded-lg px-4 py-3 mb-6">
+          <Send size={14} className="text-amber-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs font-semibold text-foreground">
+              {drafts} Draft SAR{drafts > 1 ? 's' : ''} ready to send
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Use the <span className="text-foreground font-medium">Send to Officer</span> button on each Draft SAR to forward it to the Senior Officer for review and approval.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Officer approval notice */}
       {isOfficer && pendingReview > 0 && (
         <div className="flex items-start gap-3 bg-blue-500/5 border border-blue-500/20 rounded-lg px-4 py-3 mb-6">
           <ShieldCheck size={14} className="text-blue-400 mt-0.5 shrink-0" />
           <div>
             <p className="text-xs font-semibold text-foreground">
-              {pendingReview} SAR{pendingReview > 1 ? 's' : ''} awaiting your approval
+              {pendingReview} SAR{pendingReview > 1 ? 's' : ''} awaiting your review
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">
-              As Senior Officer, you can approve analyst-submitted SARs. Approving will mark the SAR as Submitted and complete the analyst's case timeline.
+              Analysts have sent these SARs for your review. You can approve, reject, or request changes from the actions column.
             </p>
           </div>
         </div>
@@ -361,35 +408,52 @@ export default function SARReportsPage() {
                           )}
                         </button>
 
-                        {/* Approve button — Senior Officer / Admin only, for Pending Review SARs */}
+                        {/* Analyst: Send to Officer button for Draft SARs */}
+                        {!isOfficer && r.status === 'Draft' && (
+                          <button
+                            onClick={() => handleOpenSend(r)}
+                            className="flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 text-[10px] font-semibold transition-all duration-150"
+                            title="Send to Officer for review"
+                          >
+                            <Send size={11} />
+                            Send
+                          </button>
+                        )}
+
+                        {/* Analyst: Pending Review badge */}
+                        {!isOfficer && r.status === 'Pending Review' && (
+                          <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/10 text-blue-400 text-[10px] font-semibold">
+                            <ShieldCheck size={11} />
+                            Sent
+                          </span>
+                        )}
+
+                        {/* Officer: Approve button for Pending Review SARs */}
                         {isOfficer && r.status === 'Pending Review' && (
                           <button
                             onClick={() => handleOpenApprove(r)}
                             disabled={approvingId === r.id}
-                            className="p-1.5 rounded-md hover:bg-blue-500/10 text-blue-400 hover:text-blue-300 transition-all duration-150 disabled:opacity-50"
-                            aria-label="Approve SAR"
-                            title="Approve SAR"
+                            className="flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 text-[10px] font-semibold transition-all duration-150 disabled:opacity-50"
+                            title="Review SAR"
                           >
                             {approvingId === r.id ? (
-                              <Loader2 size={13} className="animate-spin" />
+                              <Loader2 size={11} className="animate-spin" />
                             ) : (
-                              <ShieldCheck size={13} />
+                              <ShieldCheck size={11} />
                             )}
+                            Review
                           </button>
                         )}
 
-                        {!isOfficer && r.status !== 'Submitted' && r.status !== 'Acknowledged' && (
-                          <button
-                            onClick={() => handleOpenSubmit(r)}
-                            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-primary transition-all duration-150"
-                            aria-label="Submit to FIU-IND"
-                          >
-                            <Send size={13} />
-                          </button>
-                        )}
                         {(r.status === 'Submitted' || r.status === 'Acknowledged') && (
                           <span className="p-1.5 text-green-400">
                             <CheckCircle size={13} />
+                          </span>
+                        )}
+
+                        {r.status === 'Rejected' && (
+                          <span className="p-1.5 text-red-400" title="Rejected by officer">
+                            <XCircle size={13} />
                           </span>
                         )}
                       </div>
@@ -402,38 +466,56 @@ export default function SARReportsPage() {
         )}
       </div>
 
-      {/* Approve Modal — Senior Officer */}
-      {approveModal && (
-        <Modal open={!!approveModal} onClose={() => setApproveModal(null)} title="Approve SAR Report" size="sm">
+      {/* Send to Officer Modal (Analyst) */}
+      {sendModal && (
+        <Modal open={!!sendModal} onClose={() => setSendModal(null)} title="Send SAR to Senior Officer" size="sm">
           <div className="space-y-4">
-            {!approveDone ? (
+            {!sendDone ? (
               <>
                 <p className="text-xs text-muted-foreground">
-                  You are approving{' '}
-                  <span className="text-foreground font-semibold">{approveModal.id}</span> submitted by the analyst for{' '}
-                  <span className="text-foreground font-semibold">{approveModal.subject}</span>.
+                  You are sending{' '}
+                  <span className="text-foreground font-semibold">{sendModal.id}</span> for{' '}
+                  <span className="text-foreground font-semibold">{sendModal.subject}</span> to the Senior Officer for review and approval.
                 </p>
                 <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-400 space-y-1">
-                  <p className="font-semibold">Approving this SAR will:</p>
+                  <p className="font-semibold">The Senior Officer will:</p>
                   <ul className="list-disc list-inside space-y-0.5 text-blue-300">
-                    <li>Mark the SAR as Submitted to FIU-IND</li>
-                    <li>Complete the analyst's case timeline (all stages)</li>
-                    <li>Generate a FIU reference number</li>
+                    <li>Receive this SAR in their Pending Cases review queue</li>
+                    <li>Read the full SAR details and evidence</li>
+                    <li>Approve, reject, or request changes</li>
                   </ul>
                 </div>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="bg-muted/50 rounded-lg p-2.5">
+                    <p className="text-muted-foreground mb-0.5">Case Ref</p>
+                    <p className="font-mono text-foreground font-semibold">{sendModal.caseRef}</p>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg p-2.5">
+                    <p className="text-muted-foreground mb-0.5">Risk Score</p>
+                    <p className="font-mono text-foreground font-semibold">{sendModal.riskScore}/100</p>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg p-2.5">
+                    <p className="text-muted-foreground mb-0.5">Pattern</p>
+                    <p className="font-mono text-foreground font-semibold">{sendModal.pattern}</p>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg p-2.5">
+                    <p className="text-muted-foreground mb-0.5">Amount</p>
+                    <p className="font-mono text-foreground font-semibold">{sendModal.amount}</p>
+                  </div>
+                </div>
                 <button
-                  onClick={handleConfirmApprove}
-                  disabled={isApproving}
+                  onClick={handleConfirmSend}
+                  disabled={isSending}
                   className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white text-xs font-semibold py-2.5 rounded-md hover:bg-blue-500 disabled:opacity-60 transition-colors"
                 >
-                  {isApproving ? (
-                    <><Loader2 size={13} className="animate-spin" /> Approving…</>
+                  {isSending ? (
+                    <><Loader2 size={13} className="animate-spin" /> Sending…</>
                   ) : (
-                    <><ShieldCheck size={13} /> Approve &amp; Submit SAR</>
+                    <><Send size={13} /> Send to Senior Officer</>
                   )}
                 </button>
                 <button
-                  onClick={() => setApproveModal(null)}
+                  onClick={() => setSendModal(null)}
                   className="w-full py-2 border border-border text-xs text-muted-foreground rounded-md hover:bg-muted transition-all"
                 >
                   Cancel
@@ -441,12 +523,66 @@ export default function SARReportsPage() {
               </>
             ) : (
               <div className="text-center py-4">
+                <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center mx-auto mb-3">
+                  <Send size={20} className="text-blue-400" />
+                </div>
+                <p className="text-sm font-semibold text-foreground mb-1">SAR Sent to Officer</p>
+                <p className="text-xs text-muted-foreground mb-2">
+                  The Senior Officer will review and take action on this SAR.
+                </p>
+                <button
+                  onClick={() => setSendModal(null)}
+                  className="text-xs text-primary hover:underline font-medium"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* Officer Review Modal */}
+      {approveModal && (
+        <Modal open={!!approveModal} onClose={() => setApproveModal(null)} title="Review SAR Report" size="sm">
+          <div className="space-y-4">
+            {!approveDone ? (
+              <OfficerReviewPanel
+                sar={approveModal}
+                isApproving={isApproving}
+                onApprove={handleConfirmApprove}
+                onReject={async (notes) => {
+                  setIsApproving(true);
+                  const { officerActionSAR } = await import('@/lib/services/amlService');
+                  const officerName = analystName;
+                  await officerActionSAR(approveModal.dbId, 'reject', officerName, notes);
+                  setSarReports((prev) =>
+                    prev.map((r) => r.id === approveModal.id ? { ...r, status: 'Rejected' } : r)
+                  );
+                  setIsApproving(false);
+                  setApproveDone(true);
+                }}
+                onRequestChanges={async (notes) => {
+                  setIsApproving(true);
+                  const { officerActionSAR } = await import('@/lib/services/amlService');
+                  const officerName = analystName;
+                  await officerActionSAR(approveModal.dbId, 'request_changes', officerName, notes);
+                  setSarReports((prev) =>
+                    prev.map((r) => r.id === approveModal.id ? { ...r, status: 'Draft' } : r)
+                  );
+                  setIsApproving(false);
+                  setApproveDone(true);
+                }}
+                onCancel={() => setApproveModal(null)}
+              />
+            ) : (
+              <div className="text-center py-4">
                 <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-3">
                   <CheckCircle size={20} className="text-green-400" />
                 </div>
-                <p className="text-sm font-semibold text-foreground mb-1">SAR Approved &amp; Submitted</p>
+                <p className="text-sm font-semibold text-foreground mb-1">Action Recorded</p>
                 <p className="text-xs text-muted-foreground mb-2">
-                  The analyst's case timeline has been fully completed.
+                  The SAR has been updated and the analyst will be notified.
                 </p>
                 <button
                   onClick={() => setApproveModal(null)}
@@ -460,7 +596,7 @@ export default function SARReportsPage() {
         </Modal>
       )}
 
-      {/* Submit Modal */}
+      {/* Submit Modal (legacy) */}
       {submitModal && (
         <Modal open={!!submitModal} onClose={() => setSubmitModal(null)} title="Submit SAR to FIU-IND">
           <div className="space-y-4">
@@ -511,5 +647,113 @@ export default function SARReportsPage() {
         </Modal>
       )}
     </AppLayout>
+  );
+}
+
+// ─── Officer Review Panel ─────────────────────────────────────────────────────
+
+interface OfficerReviewPanelProps {
+  sar: SARReport;
+  isApproving: boolean;
+  onApprove: () => void;
+  onReject: (notes: string) => void;
+  onRequestChanges: (notes: string) => void;
+  onCancel: () => void;
+}
+
+function OfficerReviewPanel({ sar, isApproving, onApprove, onReject, onRequestChanges, onCancel }: OfficerReviewPanelProps) {
+  const [notes, setNotes] = useState('');
+  const [activeAction, setActiveAction] = useState<'approve' | 'reject' | 'request_changes' | null>(null);
+
+  return (
+    <div className="space-y-4">
+      {/* SAR Summary */}
+      <div className="bg-muted/40 rounded-lg p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-mono text-muted-foreground">{sar.id}</span>
+          <span className="text-[10px] font-mono text-muted-foreground">{sar.caseRef}</span>
+        </div>
+        <p className="text-sm font-semibold text-foreground">{sar.subject}</p>
+        <div className="grid grid-cols-3 gap-2 text-[11px]">
+          <div>
+            <p className="text-muted-foreground">Pattern</p>
+            <p className="text-foreground font-medium">{sar.pattern}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Risk Score</p>
+            <p className="text-foreground font-medium">{sar.riskScore}/100</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Amount</p>
+            <p className="text-foreground font-medium">{sar.amount}</p>
+          </div>
+        </div>
+        <div className="text-[11px]">
+          <p className="text-muted-foreground">Account</p>
+          <p className="font-mono text-foreground">{sar.accountId}</p>
+        </div>
+      </div>
+
+      {/* Notes field */}
+      <div>
+        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
+          Officer Notes (optional for approve, required for reject/changes)
+        </label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Add notes for the analyst..."
+          rows={3}
+          className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50 resize-none"
+        />
+      </div>
+
+      {/* Action Buttons */}
+      <div className="grid grid-cols-3 gap-2">
+        <button
+          onClick={onApprove}
+          disabled={isApproving}
+          className="flex flex-col items-center gap-1.5 px-3 py-2.5 bg-green-500/10 text-green-400 border border-green-500/20 rounded-lg text-[11px] font-semibold hover:bg-green-500/20 disabled:opacity-50 transition-colors"
+        >
+          {isApproving && activeAction === 'approve' ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <CheckCircle size={14} />
+          )}
+          Approve
+        </button>
+        <button
+          onClick={() => { setActiveAction('request_changes'); onRequestChanges(notes); }}
+          disabled={isApproving}
+          className="flex flex-col items-center gap-1.5 px-3 py-2.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-lg text-[11px] font-semibold hover:bg-amber-500/20 disabled:opacity-50 transition-colors"
+        >
+          {isApproving && activeAction === 'request_changes' ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <RotateCcw size={14} />
+          )}
+          Request Changes
+        </button>
+        <button
+          onClick={() => { setActiveAction('reject'); onReject(notes); }}
+          disabled={isApproving}
+          className="flex flex-col items-center gap-1.5 px-3 py-2.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-[11px] font-semibold hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+        >
+          {isApproving && activeAction === 'reject' ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <XCircle size={14} />
+          )}
+          Reject
+        </button>
+      </div>
+
+      <button
+        onClick={onCancel}
+        className="w-full py-2 border border-border text-xs text-muted-foreground rounded-md hover:bg-muted transition-all"
+      >
+        Cancel
+      </button>
+    </div>
   );
 }

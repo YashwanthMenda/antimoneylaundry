@@ -252,13 +252,128 @@ export async function updateSARStatus(dbId: string, status: string, fiuRef?: str
   }
 }
 
+// ─── SAR SEND TO OFFICER ──────────────────────────────────────────────────────
+
+export async function sendSARToOfficer(dbId: string, analystName: string) {
+  const supabase = createClient();
+  try {
+    const { error } = await supabase
+      .from('sar_reports')
+      .update({
+        sar_status: 'Pending Review',
+        sent_to_officer_at: new Date().toISOString(),
+        sent_by_name: analystName,
+      })
+      .eq('id', dbId);
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      console.error('sendSARToOfficer error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (e: any) {
+    console.error('sendSARToOfficer:', e.message);
+    return false;
+  }
+}
+
+// ─── SAR OFFICER ACTION ───────────────────────────────────────────────────────
+
+export async function officerActionSAR(
+  dbId: string,
+  action: 'approve' | 'reject' | 'request_changes',
+  officerName: string,
+  notes?: string
+) {
+  const supabase = createClient();
+  try {
+    const now = new Date().toISOString();
+    let newStatus = '';
+    let fiuRef: string | undefined;
+    if (action === 'approve') {
+      newStatus = 'Submitted';
+      fiuRef = `FIU-IND/2026/SAR/${Date.now().toString().slice(-6)}`;
+    } else if (action === 'reject') {
+      newStatus = 'Rejected';
+    } else {
+      newStatus = 'Draft';
+    }
+    const update: any = {
+      sar_status: newStatus,
+      officer_action: action,
+      officer_notes: notes ?? null,
+      officer_actioned_at: now,
+      officer_actioned_by: officerName,
+    };
+    if (fiuRef) update.fiu_ref = fiuRef;
+    const { error } = await supabase
+      .from('sar_reports')
+      .update(update)
+      .eq('id', dbId);
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      console.error('officerActionSAR error:', error.message);
+      return null;
+    }
+    return { newStatus, fiuRef };
+  } catch (e: any) {
+    console.error('officerActionSAR:', e.message);
+    return null;
+  }
+}
+
+// ─── GET SAR REPORTS FOR OFFICER REVIEW ──────────────────────────────────────
+
+export async function getPendingSARsForOfficer() {
+  const supabase = createClient();
+  try {
+    const { data, error } = await supabase
+      .from('sar_reports')
+      .select('*')
+      .eq('sar_status', 'Pending Review')
+      .order('sent_to_officer_at', { ascending: false });
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      return [];
+    }
+    return (data || []).map((r) => ({
+      id: r.sar_id,
+      caseRef: r.case_ref,
+      subject: r.subject,
+      accountId: r.account_id,
+      pattern: r.pattern,
+      riskScore: r.risk_score,
+      amount: r.amount,
+      generatedAt: new Date(r.generated_at ?? r.created_at).toLocaleString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      }),
+      sentAt: r.sent_to_officer_at
+        ? new Date(r.sent_to_officer_at).toLocaleString('en-IN', {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: false,
+          })
+        : null,
+      sentByName: r.sent_by_name ?? 'Analyst',
+      status: r.sar_status as string,
+      officer: r.officer,
+      fiuRef: r.fiu_ref,
+      officerNotes: r.officer_notes ?? null,
+      dbId: r.id,
+    }));
+  } catch (e: any) {
+    console.error('getPendingSARsForOfficer:', e.message);
+    return [];
+  }
+}
+
 // ─── SAR APPROVAL ─────────────────────────────────────────────────────────────
 
 export async function approveSAR(dbId: string) {
   const supabase = createClient();
   try {
     const now = new Date().toISOString();
-    const fiuRef = `FIU-IND/2026/SAR/${Date.now().toString().slice(-6)}`;
+    let fiuRef = `FIU-IND/2026/SAR/${Date.now().toString().slice(-6)}`;
     const { error } = await supabase
       .from('sar_reports')
       .update({

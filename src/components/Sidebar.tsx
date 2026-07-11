@@ -27,7 +27,7 @@ const navItems: NavItem[] = [
   { id: 'nav-alerts', label: 'Alerts', href: '/alerts', icon: AlertTriangle, badgeKey: 'alerts', group: 'MONITORING' },
   { id: 'nav-cases', label: 'Case Management', href: '/case-investigation-detail', icon: FolderOpen, badgeKey: 'cases', group: 'INVESTIGATION' },
   { id: 'nav-file-case', label: 'File a Case', href: '/file-a-case', icon: FilePlus, group: 'INVESTIGATION' },
-  { id: 'nav-pending-cases', label: 'Pending Cases', href: '/pending-cases', icon: ClipboardList, badgeKey: 'pending', group: 'INVESTIGATION' },
+  { id: 'nav-pending-cases', label: 'Review Queue', href: '/pending-cases', icon: ClipboardList, badgeKey: 'pending', group: 'INVESTIGATION' },
   { id: 'nav-network', label: 'Network Graph', href: '/network', icon: Network, group: 'INVESTIGATION' },
   { id: 'nav-sar', label: 'SAR Reports', href: '/sar-reports', icon: FileText, badgeKey: 'sar', group: 'COMPLIANCE' },
   { id: 'nav-entities', label: 'Entities', href: '/entities', icon: Users, group: 'COMPLIANCE' },
@@ -56,17 +56,18 @@ export default function Sidebar() {
     const supabase = createClient();
 
     async function loadBadges() {
-      const [alertsRes, casesRes, sarRes, pendingRes] = await Promise.all([
+      const [alertsRes, casesRes, sarRes, pendingRes, pendingSARRes] = await Promise.all([
         supabase.from('alerts').select('*', { count: 'exact', head: true }).in('alert_status', ['New', 'Escalated']),
         supabase.from('cases').select('*', { count: 'exact', head: true }).in('case_status', ['Open', 'Investigating']),
         supabase.from('sar_reports').select('*', { count: 'exact', head: true }).in('sar_status', ['Draft', 'Pending Review']),
         supabase.from('case_reports').select('*', { count: 'exact', head: true }).eq('report_status', 'Submitted'),
+        supabase.from('sar_reports').select('*', { count: 'exact', head: true }).eq('sar_status', 'Pending Review'),
       ]);
       setBadges({
         alerts: alertsRes.count ?? 0,
         cases: casesRes.count ?? 0,
         sar: sarRes.count ?? 0,
-        pending: pendingRes.count ?? 0,
+        pending: (pendingRes.count ?? 0) + (pendingSARRes.count ?? 0),
       });
     }
 
