@@ -182,6 +182,8 @@ export async function getCases() {
       accountId: c.account_id,
       jurisdiction: c.jurisdiction,
       dbId: c.id,
+      assignedTo: c.assigned_to ?? null,
+      assignedAnalystName: c.assigned_analyst_name ?? null,
     }));
   } catch (e: any) {
     console.error('getCases:', e.message);
@@ -247,6 +249,175 @@ export async function updateSARStatus(dbId: string, status: string, fiuRef?: str
     if (error && isSchemaError(error)) throw error;
   } catch (e: any) {
     console.error('updateSARStatus:', e.message);
+  }
+}
+
+// ─── SAR SEND TO OFFICER ──────────────────────────────────────────────────────
+
+export async function sendSARToOfficer(dbId: string, analystName: string) {
+  const supabase = createClient();
+  try {
+    const { error } = await supabase
+      .from('sar_reports')
+      .update({
+        sar_status: 'Pending Review',
+        sent_to_officer_at: new Date().toISOString(),
+        sent_by_name: analystName,
+      })
+      .eq('id', dbId);
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      console.error('sendSARToOfficer error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (e: any) {
+    console.error('sendSARToOfficer:', e.message);
+    return false;
+  }
+}
+
+// ─── SAR OFFICER ACTION ───────────────────────────────────────────────────────
+
+export async function officerActionSAR(
+  dbId: string,
+  action: 'approve' | 'reject' | 'request_changes',
+  officerName: string,
+  notes?: string
+) {
+  const supabase = createClient();
+  try {
+    const now = new Date().toISOString();
+    let newStatus = '';
+    let fiuRef: string | undefined;
+    if (action === 'approve') {
+      newStatus = 'Submitted';
+      fiuRef = `FIU-IND/2026/SAR/${Date.now().toString().slice(-6)}`;
+    } else if (action === 'reject') {
+      newStatus = 'Rejected';
+    } else {
+      newStatus = 'Draft';
+    }
+    const update: any = {
+      sar_status: newStatus,
+      officer_action: action,
+      officer_notes: notes ?? null,
+      officer_actioned_at: now,
+      officer_actioned_by: officerName,
+    };
+    if (fiuRef) update.fiu_ref = fiuRef;
+    const { error } = await supabase
+      .from('sar_reports')
+      .update(update)
+      .eq('id', dbId);
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      console.error('officerActionSAR error:', error.message);
+      return null;
+    }
+    return { newStatus, fiuRef };
+  } catch (e: any) {
+    console.error('officerActionSAR:', e.message);
+    return null;
+  }
+}
+
+// ─── GET SAR REPORTS FOR OFFICER REVIEW ──────────────────────────────────────
+
+export async function getPendingSARsForOfficer() {
+  const supabase = createClient();
+  try {
+    const { data, error } = await supabase
+      .from('sar_reports')
+      .select('*')
+      .eq('sar_status', 'Pending Review')
+      .order('sent_to_officer_at', { ascending: false });
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      return [];
+    }
+    return (data || []).map((r) => ({
+      id: r.sar_id,
+      caseRef: r.case_ref,
+      subject: r.subject,
+      accountId: r.account_id,
+      pattern: r.pattern,
+      riskScore: r.risk_score,
+      amount: r.amount,
+      generatedAt: new Date(r.generated_at ?? r.created_at).toLocaleString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      }),
+      sentAt: r.sent_to_officer_at
+        ? new Date(r.sent_to_officer_at).toLocaleString('en-IN', {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: false,
+          })
+        : null,
+      sentByName: r.sent_by_name ?? 'Analyst',
+      status: r.sar_status as string,
+      officer: r.officer,
+      fiuRef: r.fiu_ref,
+      officerNotes: r.officer_notes ?? null,
+      dbId: r.id,
+    }));
+  } catch (e: any) {
+    console.error('getPendingSARsForOfficer:', e.message);
+    return [];
+  }
+}
+
+// ─── SAR APPROVAL ─────────────────────────────────────────────────────────────
+
+export async function approveSAR(dbId: string) {
+  const supabase = createClient();
+  try {
+    const now = new Date().toISOString();
+    let fiuRef = `FIU-IND/2026/SAR/${Date.now().toString().slice(-6)}`;
+    const { error } = await supabase
+      .from('sar_reports')
+      .update({
+        sar_status: 'Submitted',
+        approved_at: now,
+        fiu_ref: fiuRef,
+      })
+      .eq('id', dbId);
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      console.error('approveSAR update error:', error.message);
+      return null;
+    }
+    return fiuRef;
+  } catch (e: any) {
+    console.error('approveSAR:', e.message);
+    return null;
+  }
+}
+
+export async function getSARStatusForCase(caseRef: string) {
+  const supabase = createClient();
+  try {
+    const { data, error } = await supabase
+      .from('sar_reports')
+      .select('sar_status, approved_at, generated_at, created_at')
+      .eq('case_ref', caseRef)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      return null;
+    }
+    return data
+      ? {
+          status: data.sar_status as string,
+          approvedAt: data.approved_at,
+          generatedAt: data.generated_at ?? data.created_at,
+        }
+      : null;
+  } catch (e: any) {
+    console.error('getSARStatusForCase:', e.message);
+    return null;
   }
 }
 
@@ -398,5 +569,160 @@ export async function getAllUserProfiles() {
   } catch (e: any) {
     console.error('getAllUserProfiles:', e.message);
     return [];
+  }
+}
+
+// ─── CASE ASSIGNMENT ──────────────────────────────────────────────────────────
+
+export async function getAnalysts() {
+  const supabase = createClient();
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('id, full_name, email, role')
+      .eq('role', 'analyst')
+      .order('full_name');
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      return [];
+    }
+    return (data || []).map((u) => ({
+      id: u.id as string,
+      fullName: u.full_name as string,
+      email: u.email as string,
+    }));
+  } catch (e: any) {
+    console.error('getAnalysts:', e.message);
+    return [];
+  }
+}
+
+export async function assignCaseToAnalyst(
+  caseRef: string,
+  analystId: string,
+  analystName: string
+) {
+  const supabase = createClient();
+  try {
+    const { error } = await supabase
+      .from('cases')
+      .update({
+        assigned_to: analystId,
+        assigned_analyst_name: analystName,
+        assigned_officer: analystName,
+      })
+      .eq('case_ref', caseRef);
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      console.error('assignCaseToAnalyst error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (e: any) {
+    console.error('assignCaseToAnalyst:', e.message);
+    return false;
+  }
+}
+
+export async function getCaseAssignment(caseRef: string) {
+  const supabase = createClient();
+  try {
+    const { data, error } = await supabase
+      .from('cases')
+      .select('assigned_to, assigned_analyst_name, assigned_officer')
+      .eq('case_ref', caseRef)
+      .maybeSingle();
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      return null;
+    }
+    return data
+      ? {
+          analystId: data.assigned_to as string | null,
+          analystName: (data.assigned_analyst_name ?? data.assigned_officer) as string | null,
+        }
+      : null;
+  } catch (e: any) {
+    console.error('getCaseAssignment:', e.message);
+    return null;
+  }
+}
+
+// ─── PENDING CASE REPORTS (Officer Review) ────────────────────────────────────
+
+export async function getPendingCaseReports() {
+  const supabase = createClient();
+  try {
+    const { data, error } = await supabase
+      .from('case_reports')
+      .select('*')
+      .in('report_status', ['Submitted', 'Acknowledged', 'Closed'])
+      .order('created_at', { ascending: false });
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      return [];
+    }
+    return (data || []).map((r) => ({
+      id: r.report_ref,
+      reportRef: r.report_ref,
+      accountId: r.account_id,
+      accountHolder: r.account_holder,
+      accountType: r.account_type,
+      bankName: r.bank_name,
+      activityType: r.activity_type,
+      activityDescription: r.activity_description,
+      transactionAmount: r.transaction_amount,
+      transactionDate: r.transaction_date ?? null,
+      riskLevel: r.risk_level,
+      jurisdiction: r.jurisdiction,
+      evidenceNotes: r.evidence_notes ?? null,
+      reportStatus: r.report_status,
+      submittedByName: r.submitted_by_name,
+      createdAt: new Date(r.created_at).toLocaleString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      }),
+      acknowledgedByName: r.acknowledged_by_name ?? null,
+      acknowledgedAt: r.acknowledged_at
+        ? new Date(r.acknowledged_at).toLocaleString('en-IN', {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: false,
+          })
+        : null,
+      dbId: r.id,
+    }));
+  } catch (e: any) {
+    console.error('getPendingCaseReports:', e.message);
+    return [];
+  }
+}
+
+export async function acknowledgeCaseReport(
+  dbId: string,
+  officerId: string,
+  officerName: string,
+  newStatus: 'Acknowledged' | 'Closed'
+) {
+  const supabase = createClient();
+  try {
+    const update: any = {
+      report_status: newStatus,
+      acknowledged_by: officerId || null,
+      acknowledged_by_name: officerName,
+      acknowledged_at: new Date().toISOString(),
+    };
+    const { error } = await supabase
+      .from('case_reports')
+      .update(update)
+      .eq('id', dbId);
+    if (error) {
+      if (isSchemaError(error)) throw error;
+      console.error('acknowledgeCaseReport error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (e: any) {
+    console.error('acknowledgeCaseReport:', e.message);
+    return false;
   }
 }

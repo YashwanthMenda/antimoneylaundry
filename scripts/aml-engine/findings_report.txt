@@ -1,0 +1,50 @@
+======================================================================
+  AML ENGINE — FINDINGS REPORT
+  Generated : 12-Jul-2026 04:33 UTC
+  Case Ref  : CASE-0847  |  Subject: Ananya Trading Pvt Ltd
+======================================================================
+
+  EXECUTIVE SUMMARY
+----------------------------------------------------------------------
+  Transactions analysed : 53
+  Patterns detected     : 4
+  Composite risk score  : 92/100  (CRITICAL)
+
+  PATTERN FINDINGS
+----------------------------------------------------------------------
+  [1] Smurfing / Structuring  (+40 risk pts)
+      47 deposits below ₹2,00,000 threshold into HDFC-4521 — classic structuring pattern
+      Sample TXN IDs: TXN-A1B2C3D4, TXN-E5F6G7H8, TXN-I9J0K1L2, TXN-M3N4O5P6, TXN-Q7R8S9T0...
+
+  [2] Round-Trip Layering  (+28 risk pts)
+      Funds left HDFC-4521 (₹39,75,000) and returned (₹79,50,000) via offshore hops
+      Sample TXN IDs: TXN-U1V2W3X4, TXN-Y5Z6A7B8
+
+  [3] Pass-Through Account  (+15 risk pts)
+      HDFC-4521 forwarded 99% of received funds — consistent with pass-through / money mule behaviour
+
+  [4] FATF High-Risk Jurisdiction  (+9 risk pts)
+      4 transactions routed through FATF high-risk jurisdictions: Dubai, UAE; Singapore, SG
+      Jurisdictions : Dubai, UAE, Singapore, SG
+
+  RISK SCORE BREAKDOWN
+----------------------------------------------------------------------
+  +40 pts  Smurfing / Structuring
+  +28 pts  Round-Trip Layering
+  +15 pts  Pass-Through Account
+  + 9 pts  FATF High-Risk Jurisdiction
+----------------------------------------------------------------------
+   92/100  COMPOSITE RISK SCORE
+
+  RECOMMENDED ACTIONS
+----------------------------------------------------------------------
+  → File SAR with FIU-IND within 7 days (FATF Rec. 20)
+  → Freeze account HDFC-4521 pending full investigation
+  → Conduct enhanced KYC on all linked entities (FATF Rec. 10)
+  → Coordinate with Dubai FSA and MAS Singapore on offshore accounts
+  → Initiate director network investigation — 23 linked companies flagged
+  → Document all sub-threshold deposits for regulatory submission
+
+======================================================================
+  END OF REPORT — CONFIDENTIAL
+======================================================================
