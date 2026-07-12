@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ClipboardList, CheckCircle, Send, Loader2, Clock, AlertTriangle, User, DollarSign, FileText, RefreshCw, XCircle, RotateCcw, ChevronDown, ChevronUp,  } from 'lucide-react';
 import { getPendingCaseReports, acknowledgeCaseReport, getPendingSARsForOfficer, officerActionSAR } from '@/lib/services/amlService';
 import { createClient } from '@/lib/supabase/client';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface PendingCase {
   id: string;
@@ -64,6 +65,7 @@ type ActiveTab = 'cases' | 'sars';
 
 export default function PendingCasesPage() {
   const { user } = useAuth();
+  const permissions = usePermissions();
   const [cases, setCases] = useState<PendingCase[]>([]);
   const [sars, setSARs] = useState<PendingSAR[]>([]);
   const [loading, setLoading] = useState(true);

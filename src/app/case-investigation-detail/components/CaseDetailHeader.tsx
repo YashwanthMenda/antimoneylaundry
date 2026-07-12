@@ -9,6 +9,7 @@ import { ArrowLeft, AlertTriangle, FileText, CheckCircle, Clock, User, Building2
 import { createSARReport, getSARStatusForCase, getAnalysts, assignCaseToAnalyst, getCaseAssignment, getCases } from '@/lib/services/amlService';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface CaseDetailHeaderProps {
   caseRef?: string | null;
@@ -17,8 +18,9 @@ interface CaseDetailHeaderProps {
 
 export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: CaseDetailHeaderProps) {
   const { user } = useAuth();
+  const permissions = usePermissions();
   const userRole = (user as any)?.user_metadata?.role ?? (user as any)?.role ?? '';
-  const isSeniorOfficer = userRole === 'senior_officer' || userRole === 'admin';
+  const isSeniorOfficer = permissions.isOfficer;
 
   // Resolved case ref — starts null until auto-loaded if not provided
   const [resolvedCaseRef, setResolvedCaseRef] = useState<string | null>(caseRefProp ?? null);
@@ -479,7 +481,7 @@ export default function CaseDetailHeader({ caseRef: caseRefProp, onViewSAR }: Ca
               )}
               <button
                 onClick={() => setEscalateModalOpen(true)}
-                disabled={escalated}
+                disabled={escalated || !permissions.canEscalate}
                 className={`flex items-center justify-center gap-1.5 px-4 py-2 border text-xs font-semibold rounded-md active:scale-95 transition-all duration-150 ${
                   escalated
                     ? 'bg-risk-critical/10 border-risk-critical text-risk-critical cursor-default' :'bg-muted border-border text-foreground hover:bg-muted/80'
